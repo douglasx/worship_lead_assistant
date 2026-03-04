@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Worship Lead Assistant</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: rgba(15, 23, 42, 0.75);
+        --line: rgba(148, 163, 184, 0.35);
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --primary: #38bdf8;
+        --primary-2: #6366f1;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.2), transparent 40%),
+          radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.22), transparent 40%),
+          var(--bg);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .card {
+        width: min(900px, 100%);
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 28px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.4rem, 2vw, 2rem);
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .uploader {
+        border: 1.5px dashed var(--line);
+        border-radius: 14px;
+        margin-top: 22px;
+        padding: 20px;
+        text-align: center;
+        transition: 0.2s ease;
+        background: rgba(15, 23, 42, 0.45);
+      }
+
+      .uploader.dragging {
+        border-color: var(--primary);
+        background: rgba(56, 189, 248, 0.08);
+      }
+
+      .uploader input {
+        display: none;
+      }
+
+      .uploader button {
+        border: 0;
+        border-radius: 999px;
+        padding: 9px 16px;
+        font-weight: 600;
+        cursor: pointer;
+        color: #fff;
+        background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(140px, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .control {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .control label {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .control input {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(15, 23, 42, 0.5);
+        color: var(--text);
+      }
+
+      #fileList {
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      #fileList li {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(15, 23, 42, 0.48);
+        font-size: 0.95rem;
+      }
+
+      .actions {
+        margin-top: 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      #convertBtn {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 18px;
+        font-weight: 700;
+        cursor: pointer;
+        color: #fff;
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+      }
+
+      #convertBtn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      #status {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Worship Music Sheet → Lyrics Slides</h1>
+      <p>Upload one or multiple PDF sheets. The app extracts text, removes likely chords, and creates PowerPoint lyrics slides.</p>
+
+      <section class="uploader" id="dropZone">
+        <input id="fileInput" type="file" multiple accept="application/pdf" />
+        <p>Drag & drop PDFs here</p>
+        <p style="margin: 8px 0 12px">or</p>
+        <button type="button" id="pickBtn">Choose PDF files</button>
+      </section>
+
+      <section class="controls">
+        <div class="control">
+          <label for="linesPerSlide">Lines per slide</label>
+          <input id="linesPerSlide" type="number" min="2" max="12" value="6" />
+        </div>
+        <div class="control">
+          <label for="fontSize">Font size</label>
+          <input id="fontSize" type="number" min="20" max="72" value="38" />
+        </div>
+      </section>
+
+      <ul id="fileList"></ul>
+
+      <div class="actions">
+        <button id="convertBtn" type="button">Convert to PowerPoint</button>
+        <span id="status">No files selected.</span>
+      </div>
+    </main>
+
+    <script>
+      const fileInput = document.getElementById('fileInput');
+      const fileList = document.getElementById('fileList');
+      const pickBtn = document.getElementById('pickBtn');
+      const convertBtn = document.getElementById('convertBtn');
+      const dropZone = document.getElementById('dropZone');
+      const status = document.getElementById('status');
+      const linesPerSlide = document.getElementById('linesPerSlide');
+      const fontSize = document.getElementById('fontSize');
+
+      let selectedFiles = [];
+
+      pickBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => addFiles([...e.target.files]));
+
+      ['dragenter', 'dragover'].forEach((eventName) => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropZone.classList.add('dragging');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach((eventName) => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropZone.classList.remove('dragging');
+        });
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        const files = [...e.dataTransfer.files].filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+        addFiles(files);
+      });
+
+      convertBtn.addEventListener('click', convertFiles);
+
+      function addFiles(files) {
+        const map = new Map(selectedFiles.map((f) => [f.name + f.size, f]));
+        files.forEach((f) => {
+          if ((f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) && !map.has(f.name + f.size)) {
+            map.set(f.name + f.size, f);
+          }
+        });
+
+        selectedFiles = [...map.values()];
+        renderFileList();
+      }
+
+      function renderFileList() {
+        fileList.innerHTML = '';
+        if (!selectedFiles.length) {
+          status.textContent = 'No files selected.';
+          return;
+        }
+
+        selectedFiles.forEach((file) => {
+          const li = document.createElement('li');
+          li.textContent = `${file.name} (${Math.ceil(file.size / 1024)} KB)`;
+          fileList.appendChild(li);
+        });
+
+        status.textContent = `${selectedFiles.length} PDF file(s) ready.`;
+      }
+
+      async function convertFiles() {
+        if (!selectedFiles.length) {
+          status.textContent = 'Please choose at least one PDF.';
+          return;
+        }
+
+        convertBtn.disabled = true;
+        status.textContent = 'Converting... please wait';
+
+        const formData = new FormData();
+        selectedFiles.forEach((file) => formData.append('files', file));
+        formData.append('lines_per_slide', linesPerSlide.value || '6');
+        formData.append('font_size', fontSize.value || '38');
+
+        try {
+          const response = await fetch('/api/convert', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.detail || 'Conversion failed.');
+          }
+
+          const blob = await response.blob();
+          const disposition = response.headers.get('Content-Disposition') || '';
+          const fileName = getFilenameFromDisposition(disposition) || 'lyrics_slides.pptx';
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+
+          status.textContent = 'Done! Download started.';
+        } catch (error) {
+          status.textContent = error.message;
+        } finally {
+          convertBtn.disabled = false;
+        }
+      }
+
+      function getFilenameFromDisposition(header) {
+        const utf8 = header.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8 && utf8[1]) return decodeURIComponent(utf8[1]);
+
+        const ascii = header.match(/filename="?([^";]+)"?/i);
+        return ascii?.[1] || null;
+      }
+    </script>
+  </body>
+</html>
