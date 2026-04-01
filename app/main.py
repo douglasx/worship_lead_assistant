@@ -4,7 +4,6 @@ import base64
 import io
 import json
 import re
-import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -104,7 +103,8 @@ async def convert(
     lines_per_slide = max(2, min(lines_per_slide, 12))
     font_size = max(20, min(font_size, 72))
 
-    output_files: list[tuple[str, bytes]] = []
+    songs: list[dict] = []
+    first_stem: str = "lyrics"
 
     for upload in files:
         if not upload.filename or not upload.filename.lower().endswith(".pdf"):
@@ -119,39 +119,33 @@ async def convert(
 
         try:
             song_data = _extract_lyrics_from_pdf(file_bytes)
-            ppt_bytes = _build_pptx(song_data, lines_per_slide=lines_per_slide, font_size=font_size)
         except Exception as exc:
             raise HTTPException(
                 status_code=422,
                 detail=f"Failed to process {upload.filename}: {exc}",
             ) from exc
 
-        stem = _sanitize_basename(Path(upload.filename).stem)
-        output_files.append((f"{stem}_lyrics.pptx", ppt_bytes))
+        songs.append(song_data)
+        if len(songs) == 1:
+            first_stem = _sanitize_basename(Path(upload.filename).stem)
 
-    if len(output_files) == 1:
-        filename, data = output_files[0]
-        return Response(
-            content=data,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": _content_disposition(filename)},
-        )
+    ppt_bytes = _build_combined_pptx(songs, lines_per_slide=lines_per_slide, font_size=font_size)
 
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for filename, data in output_files:
-            zf.writestr(filename, data)
+    if len(songs) == 1:
+        filename = f"{first_stem}_lyrics.pptx"
+    else:
+        filename = "worship_songs_lyrics.pptx"
 
     return Response(
-        content=archive.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=worship_lyrics_slides.zip"},
+        content=ppt_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
 
 
 @app.post("/api/convert-youtube")
 async def convert_youtube(
-    url: str = Form(...),
+    urls: str = Form(...),
     source: str = Form("transcript"),  # "transcript" or "description"
     lines_per_slide: int = Form(4),
     font_size: int = Form(56),
@@ -159,18 +153,28 @@ async def convert_youtube(
     lines_per_slide = max(2, min(lines_per_slide, 12))
     font_size = max(20, min(font_size, 72))
 
-    try:
-        if source == "description":
-            raw_text = _get_youtube_description(url)
-        else:
-            raw_text = _get_youtube_transcript(url)
-        song_data = _structure_transcript_with_claude(raw_text)
-        ppt_bytes = _build_pptx(song_data, lines_per_slide=lines_per_slide, font_size=font_size)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    url_list = [u.strip() for u in urls.splitlines() if u.strip()]
+    if not url_list:
+        raise HTTPException(status_code=400, detail="Please enter at least one YouTube URL.")
 
-    title = song_data.get("title") or "worship_song"
-    filename = f"{_sanitize_basename(title)}_lyrics.pptx"
+    songs: list[dict] = []
+    for url in url_list:
+        try:
+            if source == "description":
+                raw_text = _get_youtube_description(url)
+            else:
+                raw_text = _get_youtube_transcript(url)
+            songs.append(_structure_transcript_with_claude(raw_text))
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"{url}: {exc}") from exc
+
+    ppt_bytes = _build_combined_pptx(songs, lines_per_slide=lines_per_slide, font_size=font_size)
+
+    if len(songs) == 1:
+        title = songs[0].get("title") or "worship_song"
+        filename = f"{_sanitize_basename(title)}_lyrics.pptx"
+    else:
+        filename = "worship_songs_lyrics.pptx"
 
     return Response(
         content=ppt_bytes,
@@ -282,17 +286,15 @@ def _parse_claude_json(text: str) -> dict:
 # Slide builder
 # ---------------------------------------------------------------------------
 
-def _build_pptx(song_data: dict, *, lines_per_slide: int, font_size: int) -> bytes:
-    sections = song_data.get("sections", [])
-    language = song_data.get("language", "en")
-    # YaHei supports both CJK and Latin; use it whenever Chinese is present
-    font_name = _FONT_ZH if "zh" in language else _FONT_EN
+def _build_combined_pptx(songs: list[dict], *, lines_per_slide: int, font_size: int) -> bytes:
+    """Build a single PPTX from one or more song dicts.
 
-    if not sections:
-        raise ValueError("No lyrics sections were found in the song data.")
+    When multiple songs are provided, a title slide is inserted before each song.
+    """
+    if not songs:
+        raise ValueError("No songs to build presentation from.")
 
     presentation = Presentation()
-    # 16:9 widescreen (matches modern projectors and screens)
     presentation.slide_width = Inches(13.333)
     presentation.slide_height = Inches(7.5)
     blank_layout = presentation.slide_layouts[6]
@@ -302,18 +304,19 @@ def _build_pptx(song_data: dict, *, lines_per_slide: int, font_size: int) -> byt
     MARGIN_H = Inches(0.5)
     MARGIN_V = Inches(0.5)
 
-    for section in sections:
-        section_type = section.get("type", "")
-        section_num = section.get("number")
-        lines = [ln for ln in section.get("lines", []) if ln.strip()]
+    multi = len(songs) > 1
 
-        if not lines:
+    for song_data in songs:
+        sections = song_data.get("sections", [])
+        language = song_data.get("language", "en")
+        title = song_data.get("title") or ""
+        font_name = _FONT_ZH if "zh" in language else _FONT_EN
+
+        if not sections:
             continue
 
-        header = f"{section_type} {section_num}" if section_num else section_type
-        chunks = [lines[i: i + lines_per_slide] for i in range(0, len(lines), lines_per_slide)]
-
-        for chunk_idx, chunk in enumerate(chunks):
+        # Insert a title slide when combining multiple songs
+        if multi and title:
             slide = presentation.slides.add_slide(blank_layout)
             slide.background.fill.solid()
             slide.background.fill.fore_color.rgb = RGBColor(0, 0, 0)
@@ -327,20 +330,54 @@ def _build_pptx(song_data: dict, *, lines_per_slide: int, font_size: int) -> byt
             tf.word_wrap = True
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
 
-            # Show section header only on the first chunk of each section
-            display_lines = ([header] if chunk_idx == 0 and header else []) + chunk
+            para = tf.paragraphs[0]
+            para.text = title
+            para.alignment = PP_ALIGN.CENTER
+            run = para.runs[0]
+            run.font.name = font_name
+            run.font.size = Pt(font_size + 10)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(255, 255, 255)
 
-            for idx, line in enumerate(display_lines):
-                is_header = idx == 0 and chunk_idx == 0 and bool(header)
-                para = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
-                para.text = line
-                para.alignment = PP_ALIGN.CENTER
+        # Content slides
+        for section in sections:
+            section_type = section.get("type", "")
+            section_num = section.get("number")
+            lines = [ln for ln in section.get("lines", []) if ln.strip()]
 
-                run = para.runs[0]
-                run.font.name = font_name
-                run.font.size = Pt(font_size + 4 if is_header else font_size)
-                run.font.bold = is_header
-                run.font.color.rgb = RGBColor(255, 255, 255)
+            if not lines:
+                continue
+
+            header = f"{section_type} {section_num}" if section_num else section_type
+            chunks = [lines[i: i + lines_per_slide] for i in range(0, len(lines), lines_per_slide)]
+
+            for chunk_idx, chunk in enumerate(chunks):
+                slide = presentation.slides.add_slide(blank_layout)
+                slide.background.fill.solid()
+                slide.background.fill.fore_color.rgb = RGBColor(0, 0, 0)
+
+                box = slide.shapes.add_textbox(
+                    MARGIN_H, MARGIN_V,
+                    SLIDE_W - 2 * MARGIN_H, SLIDE_H - 2 * MARGIN_V,
+                )
+                tf = box.text_frame
+                tf.clear()
+                tf.word_wrap = True
+                tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+                display_lines = ([header] if chunk_idx == 0 and header else []) + chunk
+
+                for idx, line in enumerate(display_lines):
+                    is_header = idx == 0 and chunk_idx == 0 and bool(header)
+                    para = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
+                    para.text = line
+                    para.alignment = PP_ALIGN.CENTER
+
+                    run = para.runs[0]
+                    run.font.name = font_name
+                    run.font.size = Pt(font_size + 4 if is_header else font_size)
+                    run.font.bold = is_header
+                    run.font.color.rgb = RGBColor(255, 255, 255)
 
     output = io.BytesIO()
     presentation.save(output)

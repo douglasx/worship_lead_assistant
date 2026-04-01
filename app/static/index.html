@@ -41,8 +41,43 @@
         box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
       }
 
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+      }
+
+      .card-header-text { flex: 1; }
+
       h1 { margin: 0 0 8px; font-size: clamp(1.4rem, 2vw, 2rem); }
-      p { margin: 0; color: var(--muted); }
+      p.subtitle { margin: 0; color: var(--muted); }
+
+      /* Language toggle */
+      .lang-toggle {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+        margin-top: 4px;
+      }
+
+      .lang-btn {
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 5px 10px;
+        transition: color 0.15s, border-color 0.15s, background 0.15s;
+      }
+
+      .lang-btn.active {
+        color: var(--primary);
+        border-color: var(--primary);
+        background: rgba(56, 189, 248, 0.08);
+      }
 
       /* Tabs */
       .tabs {
@@ -99,30 +134,29 @@
         background: linear-gradient(135deg, var(--primary), var(--primary-2));
       }
 
-      /* YouTube input */
-      .yt-row {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-      }
-
-      .yt-row input[type="url"] {
-        flex: 1;
+      /* YouTube textarea */
+      .yt-textarea {
+        width: 100%;
+        min-height: 90px;
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 14px;
         background: rgba(15, 23, 42, 0.5);
         color: var(--text);
         font-size: 0.95rem;
+        font-family: inherit;
+        resize: vertical;
+        line-height: 1.6;
       }
 
-      .yt-row input[type="url"]::placeholder { color: var(--muted); }
+      .yt-textarea::placeholder { color: var(--muted); }
 
       /* Source toggle */
       .source-toggle {
         display: flex;
         gap: 8px;
         margin-top: 14px;
+        flex-wrap: wrap;
       }
 
       .source-toggle label {
@@ -218,30 +252,38 @@
   </head>
   <body>
     <main class="card">
-      <h1>Worship Music Sheet → Lyrics Slides</h1>
-      <p>Upload a PDF sheet or paste a YouTube URL. Claude extracts, structures, and formats the lyrics into a PowerPoint deck.</p>
+      <div class="card-header">
+        <div class="card-header-text">
+          <h1 data-i18n="pageTitle">Worship Music Sheet → Lyrics Slides</h1>
+          <p class="subtitle" data-i18n="subtitle">Upload PDFs or paste YouTube URLs. Claude extracts, structures, and formats the lyrics into a PowerPoint deck.</p>
+        </div>
+        <div class="lang-toggle">
+          <button class="lang-btn active" data-lang="en">EN</button>
+          <button class="lang-btn" data-lang="zh">繁中</button>
+        </div>
+      </div>
 
       <div class="tabs">
-        <button class="tab-btn active" data-tab="pdf">PDF Upload</button>
-        <button class="tab-btn" data-tab="youtube">YouTube URL</button>
+        <button class="tab-btn active" data-tab="pdf" data-i18n="tabPdf">PDF Upload</button>
+        <button class="tab-btn" data-tab="youtube" data-i18n="tabYoutube">YouTube URL</button>
       </div>
 
       <!-- PDF Tab -->
       <div class="tab-panel active" id="tab-pdf">
         <section class="uploader" id="dropZone">
           <input id="fileInput" type="file" multiple accept="application/pdf" />
-          <p>Drag &amp; drop PDFs here</p>
-          <p style="margin: 8px 0 12px">or</p>
-          <button type="button" id="pickBtn">Choose PDF files</button>
+          <p data-i18n="dropZoneText">Drag &amp; drop PDFs here</p>
+          <p data-i18n="dropZoneOr" style="margin: 8px 0 12px">or</p>
+          <button type="button" id="pickBtn" data-i18n="pickFiles">Choose PDF files</button>
         </section>
 
         <div class="controls">
           <div class="control">
-            <label for="linesPerSlide">Lines per slide</label>
+            <label for="linesPerSlide" data-i18n="linesPerSlide">Lines per slide</label>
             <input id="linesPerSlide" type="number" min="2" max="12" value="4" />
           </div>
           <div class="control">
-            <label for="fontSize">Font size (pt)</label>
+            <label for="fontSize" data-i18n="fontSize">Font size (pt)</label>
             <input id="fontSize" type="number" min="20" max="72" value="56" />
           </div>
         </div>
@@ -249,48 +291,152 @@
         <ul id="fileList"></ul>
 
         <div class="actions">
-          <button id="convertPdfBtn" class="convert-btn" type="button">Convert to PowerPoint</button>
-          <span id="pdfStatus" class="status">No files selected.</span>
+          <button id="convertPdfBtn" class="convert-btn" type="button" data-i18n="convertBtn">Convert to PowerPoint</button>
+          <span id="pdfStatus" class="status" data-i18n-init="pdfStatusInit">No files selected.</span>
         </div>
       </div>
 
       <!-- YouTube Tab -->
       <div class="tab-panel" id="tab-youtube">
-        <div class="yt-row">
-          <input id="ytUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." />
-        </div>
+        <textarea
+          id="ytUrls"
+          class="yt-textarea"
+          data-i18n-placeholder="ytPlaceholder"
+          placeholder="https://www.youtube.com/watch?v=&#10;https://youtu.be/..."
+        ></textarea>
+        <p class="hint" data-i18n="ytMultiHint">One URL per line — all songs will be combined into a single PowerPoint.</p>
 
         <div class="source-toggle">
           <label>
             <input type="radio" name="ytSource" value="transcript" checked />
-            <span>Transcript (captions)</span>
+            <span data-i18n="transcriptLabel">Transcript (captions)</span>
           </label>
           <label>
             <input type="radio" name="ytSource" value="description" />
-            <span>Description (lyrics pasted in description)</span>
+            <span data-i18n="descriptionLabel">Description (lyrics pasted in description)</span>
           </label>
         </div>
-        <p class="hint" id="ytHint">Uses auto-generated or manual captions. Best when the video has accurate subtitles.</p>
+        <p class="hint" id="ytHint" data-i18n="hintTranscript">Uses auto-generated or manual captions. Best when the video has accurate subtitles.</p>
 
         <div class="controls">
           <div class="control">
-            <label for="ytLinesPerSlide">Lines per slide</label>
+            <label for="ytLinesPerSlide" data-i18n="linesPerSlide">Lines per slide</label>
             <input id="ytLinesPerSlide" type="number" min="2" max="12" value="4" />
           </div>
           <div class="control">
-            <label for="ytFontSize">Font size (pt)</label>
+            <label for="ytFontSize" data-i18n="fontSize">Font size (pt)</label>
             <input id="ytFontSize" type="number" min="20" max="72" value="56" />
           </div>
         </div>
 
         <div class="actions">
-          <button id="convertYtBtn" class="convert-btn" type="button">Convert to PowerPoint</button>
-          <span id="ytStatus" class="status">Enter a YouTube URL above.</span>
+          <button id="convertYtBtn" class="convert-btn" type="button" data-i18n="convertBtn">Convert to PowerPoint</button>
+          <span id="ytStatus" class="status" data-i18n-init="ytStatusInit">Enter YouTube URLs above.</span>
         </div>
       </div>
     </main>
 
     <script>
+      // ── i18n ───────────────────────────────────────────────────────────
+      const STRINGS = {
+        en: {
+          pageTitle:        'Worship Music Sheet → Lyrics Slides',
+          subtitle:         'Upload PDFs or paste YouTube URLs. Claude extracts, structures, and formats the lyrics into a PowerPoint deck.',
+          tabPdf:           'PDF Upload',
+          tabYoutube:       'YouTube URL',
+          dropZoneText:     'Drag & drop PDFs here',
+          dropZoneOr:       'or',
+          pickFiles:        'Choose PDF files',
+          linesPerSlide:    'Lines per slide',
+          fontSize:         'Font size (pt)',
+          convertBtn:       'Convert to PowerPoint',
+          pdfStatusInit:    'No files selected.',
+          ytStatusInit:     'Enter YouTube URLs above.',
+          ytPlaceholder:    'https://www.youtube.com/watch?v=\nhttps://youtu.be/...',
+          ytMultiHint:      'One URL per line — all songs will be combined into a single PowerPoint.',
+          transcriptLabel:  'Transcript (captions)',
+          descriptionLabel: 'Description (lyrics pasted in description)',
+          hintTranscript:   'Uses auto-generated or manual captions. Best when the video has accurate subtitles.',
+          hintDescription:  'Reads lyrics pasted in the video description. Best for songs that include full lyrics there.',
+          // dynamic
+          noFiles:          'Please choose at least one PDF.',
+          analyzingPdf:     'Analyzing with Claude… this may take a moment.',
+          filesReady:       (n) => `${n} PDF file(s) ready.`,
+          noUrl:            'Please enter at least one YouTube URL.',
+          fetchingTranscript: 'Fetching transcript and analyzing with Claude…',
+          fetchingDescription: 'Reading description and analyzing with Claude…',
+          done:             'Done! Download started.',
+        },
+        zh: {
+          pageTitle:        '敬拜歌詞簡報製作',
+          subtitle:         '上傳PDF樂譜或貼上YouTube連結，Claude 將歌詞整理成 PowerPoint 簡報。',
+          tabPdf:           'PDF 上傳',
+          tabYoutube:       'YouTube 連結',
+          dropZoneText:     '拖曳 PDF 檔案至此',
+          dropZoneOr:       '或',
+          pickFiles:        '選擇 PDF 檔案',
+          linesPerSlide:    '每頁行數',
+          fontSize:         '字體大小（pt）',
+          convertBtn:       '轉換為 PowerPoint',
+          pdfStatusInit:    '尚未選擇檔案。',
+          ytStatusInit:     '請在上方輸入 YouTube 連結。',
+          ytPlaceholder:    'https://www.youtube.com/watch?v=\nhttps://youtu.be/...',
+          ytMultiHint:      '每行一個連結，所有歌曲將合併為一份 PowerPoint。',
+          transcriptLabel:  '字幕（自動生成）',
+          descriptionLabel: '影片說明（歌詞貼於說明欄）',
+          hintTranscript:   '使用自動生成或手動添加的字幕，適合有準確字幕的影片。',
+          hintDescription:  '讀取貼在影片說明欄的歌詞，適合完整歌詞貼於說明欄的影片。',
+          // dynamic
+          noFiles:          '請至少選擇一個 PDF 檔案。',
+          analyzingPdf:     'Claude 分析中⋯請稍候。',
+          filesReady:       (n) => `已選擇 ${n} 個 PDF 檔案。`,
+          noUrl:            '請輸入至少一個 YouTube 連結。',
+          fetchingTranscript: '擷取字幕並以 Claude 分析中⋯',
+          fetchingDescription: '讀取說明並以 Claude 分析中⋯',
+          done:             '完成！下載已開始。',
+        },
+      };
+
+      let currentLang = 'en';
+
+      function t(key, ...args) {
+        const val = STRINGS[currentLang][key];
+        return typeof val === 'function' ? val(...args) : (val ?? key);
+      }
+
+      function applyLang() {
+        document.documentElement.lang = currentLang === 'zh' ? 'zh-Hant' : 'en';
+
+        document.querySelectorAll('[data-i18n]').forEach((el) => {
+          el.textContent = t(el.dataset.i18n);
+        });
+
+        document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+          el.placeholder = t(el.dataset.i18nPlaceholder);
+        });
+
+        // Reset status messages to their initial values only if they haven't been set by a conversion
+        const pdfStatus = document.getElementById('pdfStatus');
+        if (!selectedFiles.length) pdfStatus.textContent = t('pdfStatusInit');
+        else pdfStatus.textContent = t('filesReady', selectedFiles.length);
+
+        const ytStatus = document.getElementById('ytStatus');
+        if (ytStatus.dataset.busy !== 'true') ytStatus.textContent = t('ytStatusInit');
+
+        // Update hint based on current source selection
+        const src = document.querySelector('input[name="ytSource"]:checked').value;
+        document.getElementById('ytHint').textContent = t(src === 'description' ? 'hintDescription' : 'hintTranscript');
+      }
+
+      document.querySelectorAll('.lang-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.lang-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentLang = btn.dataset.lang;
+          applyLang();
+        });
+      });
+
       // ── Tab switching ──────────────────────────────────────────────────
       document.querySelectorAll('.tab-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -343,24 +489,24 @@
 
       function renderFileList() {
         fileList.innerHTML = '';
-        if (!selectedFiles.length) { pdfStatus.textContent = 'No files selected.'; return; }
+        if (!selectedFiles.length) { pdfStatus.textContent = t('pdfStatusInit'); return; }
         selectedFiles.forEach((file) => {
           const li = document.createElement('li');
           li.textContent = `${file.name} (${Math.ceil(file.size / 1024)} KB)`;
           fileList.appendChild(li);
         });
-        pdfStatus.textContent = `${selectedFiles.length} PDF file(s) ready.`;
+        pdfStatus.textContent = t('filesReady', selectedFiles.length);
       }
 
       async function convertPdf() {
-        if (!selectedFiles.length) { pdfStatus.textContent = 'Please choose at least one PDF.'; return; }
+        if (!selectedFiles.length) { pdfStatus.textContent = t('noFiles'); return; }
         convertPdfBtn.disabled = true;
-        pdfStatus.textContent = 'Analyzing with Claude… this may take a moment.';
+        pdfStatus.textContent = t('analyzingPdf');
 
         const formData = new FormData();
         selectedFiles.forEach((f) => formData.append('files', f));
-        formData.append('lines_per_slide', linesPerSlide.value || '6');
-        formData.append('font_size', fontSize.value || '38');
+        formData.append('lines_per_slide', linesPerSlide.value || '4');
+        formData.append('font_size', fontSize.value || '56');
 
         try {
           await submitAndDownload('/api/convert', formData, pdfStatus);
@@ -370,38 +516,34 @@
       }
 
       // ── YouTube tab ────────────────────────────────────────────────────
-      const ytUrl           = document.getElementById('ytUrl');
+      const ytUrls          = document.getElementById('ytUrls');
       const convertYtBtn    = document.getElementById('convertYtBtn');
       const ytStatus        = document.getElementById('ytStatus');
       const ytLinesPerSlide = document.getElementById('ytLinesPerSlide');
       const ytFontSize      = document.getElementById('ytFontSize');
       const ytHint          = document.getElementById('ytHint');
 
-      const HINTS = {
-        transcript: 'Uses auto-generated or manual captions. Best when the video has accurate subtitles.',
-        description: 'Reads lyrics pasted in the video description. Best for songs that include full lyrics there.',
-      };
-
       document.querySelectorAll('input[name="ytSource"]').forEach((radio) => {
-        radio.addEventListener('change', () => { ytHint.textContent = HINTS[radio.value]; });
+        radio.addEventListener('change', () => {
+          ytHint.textContent = t(radio.value === 'description' ? 'hintDescription' : 'hintTranscript');
+        });
       });
 
       convertYtBtn.addEventListener('click', convertYoutube);
 
       async function convertYoutube() {
-        const url = ytUrl.value.trim();
-        if (!url) { ytStatus.textContent = 'Please enter a YouTube URL.'; return; }
+        const urlsText = ytUrls.value.trim();
+        if (!urlsText) { ytStatus.textContent = t('noUrl'); return; }
 
         const source = document.querySelector('input[name="ytSource"]:checked').value;
-        const statusMsg = source === 'description'
-          ? 'Reading description and analyzing with Claude…'
-          : 'Fetching transcript and analyzing with Claude…';
+        const statusMsg = source === 'description' ? t('fetchingDescription') : t('fetchingTranscript');
 
         convertYtBtn.disabled = true;
+        ytStatus.dataset.busy = 'true';
         ytStatus.textContent = statusMsg;
 
         const formData = new FormData();
-        formData.append('url', url);
+        formData.append('urls', urlsText);
         formData.append('source', source);
         formData.append('lines_per_slide', ytLinesPerSlide.value || '4');
         formData.append('font_size', ytFontSize.value || '56');
@@ -410,6 +552,7 @@
           await submitAndDownload('/api/convert-youtube', formData, ytStatus);
         } finally {
           convertYtBtn.disabled = false;
+          ytStatus.dataset.busy = 'false';
         }
       }
 
@@ -435,7 +578,7 @@
           link.remove();
           URL.revokeObjectURL(url);
 
-          statusEl.textContent = 'Done! Download started.';
+          statusEl.textContent = t('done');
         } catch (err) {
           statusEl.textContent = err.message;
         }
