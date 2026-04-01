@@ -41,20 +41,41 @@
         box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
       }
 
-      h1 {
-        margin: 0 0 8px;
-        font-size: clamp(1.4rem, 2vw, 2rem);
+      h1 { margin: 0 0 8px; font-size: clamp(1.4rem, 2vw, 2rem); }
+      p { margin: 0; color: var(--muted); }
+
+      /* Tabs */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        margin-top: 22px;
+        border-bottom: 1px solid var(--line);
       }
 
-      p {
-        margin: 0;
+      .tab-btn {
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
         color: var(--muted);
+        cursor: pointer;
+        font-size: 0.95rem;
+        font-weight: 600;
+        padding: 8px 16px 10px;
+        transition: color 0.15s, border-color 0.15s;
       }
 
+      .tab-btn.active {
+        color: var(--primary);
+        border-bottom-color: var(--primary);
+      }
+
+      .tab-panel { display: none; margin-top: 20px; }
+      .tab-panel.active { display: block; }
+
+      /* PDF uploader */
       .uploader {
         border: 1.5px dashed var(--line);
         border-radius: 14px;
-        margin-top: 22px;
         padding: 20px;
         text-align: center;
         transition: 0.2s ease;
@@ -66,9 +87,7 @@
         background: rgba(56, 189, 248, 0.08);
       }
 
-      .uploader input {
-        display: none;
-      }
+      .uploader input { display: none; }
 
       .uploader button {
         border: 0;
@@ -80,6 +99,58 @@
         background: linear-gradient(135deg, var(--primary), var(--primary-2));
       }
 
+      /* YouTube input */
+      .yt-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .yt-row input[type="url"] {
+        flex: 1;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 14px;
+        background: rgba(15, 23, 42, 0.5);
+        color: var(--text);
+        font-size: 0.95rem;
+      }
+
+      .yt-row input[type="url"]::placeholder { color: var(--muted); }
+
+      /* Source toggle */
+      .source-toggle {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .source-toggle label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        padding: 7px 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 0.88rem;
+        color: var(--muted);
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+      }
+
+      .source-toggle input[type="radio"] { display: none; }
+
+      .source-toggle input[type="radio"]:checked + span {
+        color: var(--primary);
+      }
+
+      .source-toggle label:has(input:checked) {
+        border-color: var(--primary);
+        background: rgba(56, 189, 248, 0.08);
+        color: var(--primary);
+      }
+
+      /* Controls */
       .controls {
         display: grid;
         grid-template-columns: repeat(2, minmax(140px, 1fr));
@@ -87,16 +158,9 @@
         margin-top: 16px;
       }
 
-      .control {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
+      .control { display: flex; flex-direction: column; gap: 6px; }
 
-      .control label {
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
+      .control label { color: var(--muted); font-size: 0.9rem; }
 
       .control input {
         border: 1px solid var(--line);
@@ -106,6 +170,7 @@
         color: var(--text);
       }
 
+      /* File list */
       #fileList {
         margin: 16px 0 0;
         padding: 0;
@@ -122,6 +187,7 @@
         font-size: 0.95rem;
       }
 
+      /* Actions */
       .actions {
         margin-top: 20px;
         display: flex;
@@ -129,7 +195,7 @@
         gap: 12px;
       }
 
-      #convertBtn {
+      .convert-btn {
         border: 0;
         border-radius: 12px;
         padding: 12px 18px;
@@ -139,132 +205,218 @@
         background: linear-gradient(135deg, #2563eb, #7c3aed);
       }
 
-      #convertBtn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
+      .convert-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-      #status {
+      .status { color: var(--muted); font-size: 0.95rem; }
+
+      .hint {
+        margin-top: 10px;
+        font-size: 0.82rem;
         color: var(--muted);
-        font-size: 0.95rem;
       }
     </style>
   </head>
   <body>
     <main class="card">
       <h1>Worship Music Sheet → Lyrics Slides</h1>
-      <p>Upload one or multiple PDF sheets. The app extracts text, removes likely chords, and creates PowerPoint lyrics slides.</p>
+      <p>Upload a PDF sheet or paste a YouTube URL. Claude extracts, structures, and formats the lyrics into a PowerPoint deck.</p>
 
-      <section class="uploader" id="dropZone">
-        <input id="fileInput" type="file" multiple accept="application/pdf" />
-        <p>Drag & drop PDFs here</p>
-        <p style="margin: 8px 0 12px">or</p>
-        <button type="button" id="pickBtn">Choose PDF files</button>
-      </section>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="pdf">PDF Upload</button>
+        <button class="tab-btn" data-tab="youtube">YouTube URL</button>
+      </div>
 
-      <section class="controls">
-        <div class="control">
-          <label for="linesPerSlide">Lines per slide</label>
-          <input id="linesPerSlide" type="number" min="2" max="12" value="6" />
+      <!-- PDF Tab -->
+      <div class="tab-panel active" id="tab-pdf">
+        <section class="uploader" id="dropZone">
+          <input id="fileInput" type="file" multiple accept="application/pdf" />
+          <p>Drag &amp; drop PDFs here</p>
+          <p style="margin: 8px 0 12px">or</p>
+          <button type="button" id="pickBtn">Choose PDF files</button>
+        </section>
+
+        <div class="controls">
+          <div class="control">
+            <label for="linesPerSlide">Lines per slide</label>
+            <input id="linesPerSlide" type="number" min="2" max="12" value="4" />
+          </div>
+          <div class="control">
+            <label for="fontSize">Font size (pt)</label>
+            <input id="fontSize" type="number" min="20" max="72" value="56" />
+          </div>
         </div>
-        <div class="control">
-          <label for="fontSize">Font size</label>
-          <input id="fontSize" type="number" min="20" max="72" value="38" />
+
+        <ul id="fileList"></ul>
+
+        <div class="actions">
+          <button id="convertPdfBtn" class="convert-btn" type="button">Convert to PowerPoint</button>
+          <span id="pdfStatus" class="status">No files selected.</span>
         </div>
-      </section>
+      </div>
 
-      <ul id="fileList"></ul>
+      <!-- YouTube Tab -->
+      <div class="tab-panel" id="tab-youtube">
+        <div class="yt-row">
+          <input id="ytUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+        </div>
 
-      <div class="actions">
-        <button id="convertBtn" type="button">Convert to PowerPoint</button>
-        <span id="status">No files selected.</span>
+        <div class="source-toggle">
+          <label>
+            <input type="radio" name="ytSource" value="transcript" checked />
+            <span>Transcript (captions)</span>
+          </label>
+          <label>
+            <input type="radio" name="ytSource" value="description" />
+            <span>Description (lyrics pasted in description)</span>
+          </label>
+        </div>
+        <p class="hint" id="ytHint">Uses auto-generated or manual captions. Best when the video has accurate subtitles.</p>
+
+        <div class="controls">
+          <div class="control">
+            <label for="ytLinesPerSlide">Lines per slide</label>
+            <input id="ytLinesPerSlide" type="number" min="2" max="12" value="4" />
+          </div>
+          <div class="control">
+            <label for="ytFontSize">Font size (pt)</label>
+            <input id="ytFontSize" type="number" min="20" max="72" value="56" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="convertYtBtn" class="convert-btn" type="button">Convert to PowerPoint</button>
+          <span id="ytStatus" class="status">Enter a YouTube URL above.</span>
+        </div>
       </div>
     </main>
 
     <script>
-      const fileInput = document.getElementById('fileInput');
-      const fileList = document.getElementById('fileList');
-      const pickBtn = document.getElementById('pickBtn');
-      const convertBtn = document.getElementById('convertBtn');
-      const dropZone = document.getElementById('dropZone');
-      const status = document.getElementById('status');
+      // ── Tab switching ──────────────────────────────────────────────────
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        });
+      });
+
+      // ── PDF tab ────────────────────────────────────────────────────────
+      const fileInput     = document.getElementById('fileInput');
+      const fileList      = document.getElementById('fileList');
+      const pickBtn       = document.getElementById('pickBtn');
+      const convertPdfBtn = document.getElementById('convertPdfBtn');
+      const dropZone      = document.getElementById('dropZone');
+      const pdfStatus     = document.getElementById('pdfStatus');
       const linesPerSlide = document.getElementById('linesPerSlide');
-      const fontSize = document.getElementById('fontSize');
+      const fontSize      = document.getElementById('fontSize');
 
       let selectedFiles = [];
 
       pickBtn.addEventListener('click', () => fileInput.click());
       fileInput.addEventListener('change', (e) => addFiles([...e.target.files]));
 
-      ['dragenter', 'dragover'].forEach((eventName) => {
-        dropZone.addEventListener(eventName, (e) => {
-          e.preventDefault();
-          dropZone.classList.add('dragging');
-        });
-      });
-
-      ['dragleave', 'drop'].forEach((eventName) => {
-        dropZone.addEventListener(eventName, (e) => {
-          e.preventDefault();
-          dropZone.classList.remove('dragging');
-        });
-      });
-
+      ['dragenter', 'dragover'].forEach((ev) =>
+        dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add('dragging'); })
+      );
+      ['dragleave', 'drop'].forEach((ev) =>
+        dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.remove('dragging'); })
+      );
       dropZone.addEventListener('drop', (e) => {
-        const files = [...e.dataTransfer.files].filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+        const files = [...e.dataTransfer.files].filter(
+          (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+        );
         addFiles(files);
       });
 
-      convertBtn.addEventListener('click', convertFiles);
+      convertPdfBtn.addEventListener('click', convertPdf);
 
       function addFiles(files) {
         const map = new Map(selectedFiles.map((f) => [f.name + f.size, f]));
         files.forEach((f) => {
-          if ((f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) && !map.has(f.name + f.size)) {
+          if ((f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) && !map.has(f.name + f.size))
             map.set(f.name + f.size, f);
-          }
         });
-
         selectedFiles = [...map.values()];
         renderFileList();
       }
 
       function renderFileList() {
         fileList.innerHTML = '';
-        if (!selectedFiles.length) {
-          status.textContent = 'No files selected.';
-          return;
-        }
-
+        if (!selectedFiles.length) { pdfStatus.textContent = 'No files selected.'; return; }
         selectedFiles.forEach((file) => {
           const li = document.createElement('li');
           li.textContent = `${file.name} (${Math.ceil(file.size / 1024)} KB)`;
           fileList.appendChild(li);
         });
-
-        status.textContent = `${selectedFiles.length} PDF file(s) ready.`;
+        pdfStatus.textContent = `${selectedFiles.length} PDF file(s) ready.`;
       }
 
-      async function convertFiles() {
-        if (!selectedFiles.length) {
-          status.textContent = 'Please choose at least one PDF.';
-          return;
-        }
-
-        convertBtn.disabled = true;
-        status.textContent = 'Converting... please wait';
+      async function convertPdf() {
+        if (!selectedFiles.length) { pdfStatus.textContent = 'Please choose at least one PDF.'; return; }
+        convertPdfBtn.disabled = true;
+        pdfStatus.textContent = 'Analyzing with Claude… this may take a moment.';
 
         const formData = new FormData();
-        selectedFiles.forEach((file) => formData.append('files', file));
+        selectedFiles.forEach((f) => formData.append('files', f));
         formData.append('lines_per_slide', linesPerSlide.value || '6');
         formData.append('font_size', fontSize.value || '38');
 
         try {
-          const response = await fetch('/api/convert', {
-            method: 'POST',
-            body: formData,
-          });
+          await submitAndDownload('/api/convert', formData, pdfStatus);
+        } finally {
+          convertPdfBtn.disabled = false;
+        }
+      }
 
+      // ── YouTube tab ────────────────────────────────────────────────────
+      const ytUrl           = document.getElementById('ytUrl');
+      const convertYtBtn    = document.getElementById('convertYtBtn');
+      const ytStatus        = document.getElementById('ytStatus');
+      const ytLinesPerSlide = document.getElementById('ytLinesPerSlide');
+      const ytFontSize      = document.getElementById('ytFontSize');
+      const ytHint          = document.getElementById('ytHint');
+
+      const HINTS = {
+        transcript: 'Uses auto-generated or manual captions. Best when the video has accurate subtitles.',
+        description: 'Reads lyrics pasted in the video description. Best for songs that include full lyrics there.',
+      };
+
+      document.querySelectorAll('input[name="ytSource"]').forEach((radio) => {
+        radio.addEventListener('change', () => { ytHint.textContent = HINTS[radio.value]; });
+      });
+
+      convertYtBtn.addEventListener('click', convertYoutube);
+
+      async function convertYoutube() {
+        const url = ytUrl.value.trim();
+        if (!url) { ytStatus.textContent = 'Please enter a YouTube URL.'; return; }
+
+        const source = document.querySelector('input[name="ytSource"]:checked').value;
+        const statusMsg = source === 'description'
+          ? 'Reading description and analyzing with Claude…'
+          : 'Fetching transcript and analyzing with Claude…';
+
+        convertYtBtn.disabled = true;
+        ytStatus.textContent = statusMsg;
+
+        const formData = new FormData();
+        formData.append('url', url);
+        formData.append('source', source);
+        formData.append('lines_per_slide', ytLinesPerSlide.value || '4');
+        formData.append('font_size', ytFontSize.value || '56');
+
+        try {
+          await submitAndDownload('/api/convert-youtube', formData, ytStatus);
+        } finally {
+          convertYtBtn.disabled = false;
+        }
+      }
+
+      // ── Shared helper ──────────────────────────────────────────────────
+      async function submitAndDownload(endpoint, formData, statusEl) {
+        try {
+          const response = await fetch(endpoint, { method: 'POST', body: formData });
           if (!response.ok) {
             const payload = await response.json().catch(() => ({}));
             throw new Error(payload.detail || 'Conversion failed.');
@@ -283,18 +435,15 @@
           link.remove();
           URL.revokeObjectURL(url);
 
-          status.textContent = 'Done! Download started.';
-        } catch (error) {
-          status.textContent = error.message;
-        } finally {
-          convertBtn.disabled = false;
+          statusEl.textContent = 'Done! Download started.';
+        } catch (err) {
+          statusEl.textContent = err.message;
         }
       }
 
       function getFilenameFromDisposition(header) {
         const utf8 = header.match(/filename\*=UTF-8''([^;]+)/i);
-        if (utf8 && utf8[1]) return decodeURIComponent(utf8[1]);
-
+        if (utf8?.[1]) return decodeURIComponent(utf8[1]);
         const ascii = header.match(/filename="?([^";]+)"?/i);
         return ascii?.[1] || null;
       }

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import base64
 import io
+import json
 import re
 import zipfile
 from pathlib import Path
-from typing import Iterable
+from urllib.parse import quote
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parents[1] / ".env")
+
+import anthropic
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pypdf import PdfReader
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
@@ -22,22 +27,65 @@ STATIC_DIR = BASE_DIR / "static"
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-_CHORD_TOKEN = re.compile(
-    r"^[A-G](?:#|b)?(?:m|maj|min|sus|dim|aug|add)?\d*(?:/[A-G](?:#|b)?)?$",
-    re.IGNORECASE,
-)
-_SECTION_HEADER = re.compile(
-    r"^(verse|chorus|bridge|pre-chorus|interlude|tag|ending|outro|intro)\s*\d*[:.]?$",
-    re.IGNORECASE,
-)
-_DROP_LINE = re.compile(
-    r"(copyright|all rights reserved|CCLI|\bpage\s*\d+\b)",
-    re.IGNORECASE,
-)
-_MUSIC_SYMBOLS = re.compile(
-    r"[\u2669\u266a\u266b\u266c\u266d\u266e\u266f\ud834\udd1e\ud834\udd22\ud834\udd21\ud834\udd2a\ud834\udd2b\ud834\udd5d\ud834\udd57\ud834\udd65\ud834\udd58\ud834\udd65\ud834\udd6e\ud834\udd6f\ud834\udd70\ud834\udd71\ud834\udd72]",
-)
+_claude = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
+# Fonts: YaHei supports both CJK and Latin; Calibri for English-only
+_FONT_EN = "Calibri"
+_FONT_ZH = "Microsoft YaHei"
+
+_PDF_EXTRACTION_PROMPT = """\
+You are a worship music expert. Analyze this worship song sheet image and extract the lyrics.
+
+Rules:
+- Remove all guitar/piano chords (e.g. G, Am, F/C, Dsus4, Capo 3, etc.)
+- Remove copyright notices, CCLI numbers, page numbers, tempo markings, and any metadata
+- Remove music notation symbols and repeated section cues like "(repeat chorus)"
+- Keep only the sung lyric lines
+- Identify and label each section: Verse 1, Verse 2, Chorus, Bridge, Pre-Chorus, Tag, Outro, Intro, etc.
+- The lyrics may be in English, Chinese (Traditional or Simplified), or both
+
+Return ONLY valid JSON, no other text:
+{
+  "title": "Song Title or null",
+  "language": "en",
+  "sections": [
+    {"type": "Verse", "number": 1, "lines": ["line 1", "line 2"]},
+    {"type": "Chorus", "number": null, "lines": ["line 1", "line 2"]}
+  ]
+}
+
+For language: use "en" for English, "zh" for Chinese, "en-zh" for mixed.\
+"""
+
+_TRANSCRIPT_STRUCTURING_PROMPT = """\
+You are a worship music expert. Below is a raw transcript from a worship song video.
+
+Your task:
+1. Extract only the sung lyrics (ignore spoken parts, timestamps, [Music], [Applause], etc.)
+2. Identify the song structure: Verse 1, Verse 2, Chorus, Bridge, Pre-Chorus, Tag, Outro, etc.
+3. Each unique section should appear once with its distinct lines (deduplicate repeated choruses)
+4. Fix obvious transcript errors (split/merged words, broken punctuation)
+5. The lyrics may be in English, Chinese, or both
+
+Return ONLY valid JSON, no other text:
+{
+  "title": "Song Title or null",
+  "language": "en",
+  "sections": [
+    {"type": "Verse", "number": 1, "lines": ["line 1", "line 2"]},
+    {"type": "Chorus", "number": null, "lines": ["line 1", "line 2"]}
+  ]
+}
+
+For language: use "en" for English, "zh" for Chinese, "en-zh" for mixed.
+
+Transcript:
+"""
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
 async def index() -> str:
@@ -47,8 +95,8 @@ async def index() -> str:
 @app.post("/api/convert")
 async def convert(
     files: list[UploadFile] = File(...),
-    lines_per_slide: int = Form(6),
-    font_size: int = Form(38),
+    lines_per_slide: int = Form(4),
+    font_size: int = Form(56),
 ) -> Response:
     if not files:
         raise HTTPException(status_code=400, detail="Please upload at least one PDF file.")
@@ -60,29 +108,33 @@ async def convert(
 
     for upload in files:
         if not upload.filename or not upload.filename.lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail=f"{upload.filename or 'Unknown file'} is not a PDF.")
+            raise HTTPException(
+                status_code=400,
+                detail=f"{upload.filename or 'Unknown file'} is not a PDF.",
+            )
 
         file_bytes = await upload.read()
         if not file_bytes:
             raise HTTPException(status_code=400, detail=f"{upload.filename} is empty.")
 
         try:
-            ppt_bytes = build_pptx_from_pdf(file_bytes, lines_per_slide=lines_per_slide, font_size=font_size)
-        except Exception as exc:  # noqa: BLE001
+            song_data = _extract_lyrics_from_pdf(file_bytes)
+            ppt_bytes = _build_pptx(song_data, lines_per_slide=lines_per_slide, font_size=font_size)
+        except Exception as exc:
             raise HTTPException(
                 status_code=422,
-                detail=f"Failed to process {upload.filename}: {str(exc)}",
+                detail=f"Failed to process {upload.filename}: {exc}",
             ) from exc
 
-        output_name = f"{_sanitize_basename(Path(upload.filename).stem)}_lyrics.pptx"
-        output_files.append((output_name, ppt_bytes))
+        stem = _sanitize_basename(Path(upload.filename).stem)
+        output_files.append((f"{stem}_lyrics.pptx", ppt_bytes))
 
     if len(output_files) == 1:
         filename, data = output_files[0]
         return Response(
             content=data,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            headers={"Content-Disposition": _content_disposition(filename)},
         )
 
     archive = io.BytesIO()
@@ -97,203 +149,219 @@ async def convert(
     )
 
 
-def build_pptx_from_pdf(pdf_bytes: bytes, *, lines_per_slide: int, font_size: int) -> bytes:
-    raw_text = _extract_text_from_pdf(pdf_bytes)
-    cleaned_lines = _clean_lines(raw_text.splitlines())
-    slide_chunks = _build_slide_chunks(cleaned_lines, lines_per_slide=lines_per_slide)
+@app.post("/api/convert-youtube")
+async def convert_youtube(
+    url: str = Form(...),
+    source: str = Form("transcript"),  # "transcript" or "description"
+    lines_per_slide: int = Form(4),
+    font_size: int = Form(56),
+) -> Response:
+    lines_per_slide = max(2, min(lines_per_slide, 12))
+    font_size = max(20, min(font_size, 72))
 
-    if not slide_chunks:
-        raise ValueError("No usable lyrics were found in the uploaded PDF.")
+    try:
+        if source == "description":
+            raw_text = _get_youtube_description(url)
+        else:
+            raw_text = _get_youtube_transcript(url)
+        song_data = _structure_transcript_with_claude(raw_text)
+        ppt_bytes = _build_pptx(song_data, lines_per_slide=lines_per_slide, font_size=font_size)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    title = song_data.get("title") or "worship_song"
+    filename = f"{_sanitize_basename(title)}_lyrics.pptx"
+
+    return Response(
+        content=ppt_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": _content_disposition(filename)},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Extraction helpers
+# ---------------------------------------------------------------------------
+
+def _extract_lyrics_from_pdf(pdf_bytes: bytes) -> dict:
+    """Render each PDF page as an image and send to Claude Vision for extraction."""
+    try:
+        import fitz  # PyMuPDF
+    except ImportError as exc:
+        raise ValueError("PyMuPDF is required for PDF processing.") from exc
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    content: list[dict] = []
+    for page in doc:
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+        img_b64 = base64.standard_b64encode(pix.tobytes("png")).decode()
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": img_b64},
+        })
+
+    content.append({"type": "text", "text": _PDF_EXTRACTION_PROMPT})
+
+    response = _claude.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": content}],
+    )
+
+    return _parse_claude_json(response.content[0].text)
+
+
+def _get_youtube_transcript(url: str) -> str:
+    """Pull transcript text from a YouTube video URL."""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError as exc:
+        raise ValueError("youtube-transcript-api package is required for YouTube support.") from exc
+
+    match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
+    if not match:
+        raise ValueError(f"Could not find a valid video ID in: {url}")
+    video_id = match.group(1)
+
+    # Prefer manual captions; fall back to auto-generated in priority order
+    for languages in [["zh-TW", "zh-Hant", "zh-Hans", "zh"], ["en"], None]:
+        try:
+            entries = (
+                YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+                if languages
+                else YouTubeTranscriptApi.get_transcript(video_id)
+            )
+            return " ".join(e["text"] for e in entries)
+        except Exception:
+            continue
+
+    raise ValueError(f"No transcript is available for this YouTube video: {url}")
+
+
+def _get_youtube_description(url: str) -> str:
+    """Extract the video description from a YouTube URL using yt-dlp."""
+    try:
+        import yt_dlp
+    except ImportError as exc:
+        raise ValueError("yt-dlp package is required for description extraction.") from exc
+
+    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    description = (info.get("description") or "").strip()
+    if not description:
+        raise ValueError("This video has no description.")
+    return description
+
+
+def _structure_transcript_with_claude(transcript_text: str) -> dict:
+    """Ask Claude to clean and structure raw transcript text into labeled song sections."""
+    response = _claude.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=4096,
+        messages=[{
+            "role": "user",
+            "content": _TRANSCRIPT_STRUCTURING_PROMPT + transcript_text,
+        }],
+    )
+    return _parse_claude_json(response.content[0].text)
+
+
+def _parse_claude_json(text: str) -> dict:
+    """Extract JSON from Claude's response, stripping any markdown code fences."""
+    text = text.strip()
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if fence:
+        text = fence.group(1).strip()
+    return json.loads(text)
+
+
+# ---------------------------------------------------------------------------
+# Slide builder
+# ---------------------------------------------------------------------------
+
+def _build_pptx(song_data: dict, *, lines_per_slide: int, font_size: int) -> bytes:
+    sections = song_data.get("sections", [])
+    language = song_data.get("language", "en")
+    # YaHei supports both CJK and Latin; use it whenever Chinese is present
+    font_name = _FONT_ZH if "zh" in language else _FONT_EN
+
+    if not sections:
+        raise ValueError("No lyrics sections were found in the song data.")
 
     presentation = Presentation()
+    # 16:9 widescreen (matches modern projectors and screens)
+    presentation.slide_width = Inches(13.333)
+    presentation.slide_height = Inches(7.5)
     blank_layout = presentation.slide_layouts[6]
 
-    for chunk in slide_chunks:
-        slide = presentation.slides.add_slide(blank_layout)
-        slide.background.fill.solid()
-        slide.background.fill.fore_color.rgb = RGBColor(0, 0, 0)
+    SLIDE_W = Inches(13.333)
+    SLIDE_H = Inches(7.5)
+    MARGIN_H = Inches(0.5)
+    MARGIN_V = Inches(0.5)
 
-        box = slide.shapes.add_textbox(Inches(0.8), Inches(0.7), Inches(11.8), Inches(5.8))
-        text_frame = box.text_frame
-        text_frame.clear()
-        text_frame.word_wrap = True
-        text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    for section in sections:
+        section_type = section.get("type", "")
+        section_num = section.get("number")
+        lines = [ln for ln in section.get("lines", []) if ln.strip()]
 
-        for idx, line in enumerate(chunk):
-            paragraph = text_frame.paragraphs[0] if idx == 0 else text_frame.add_paragraph()
-            paragraph.text = line
-            paragraph.alignment = PP_ALIGN.CENTER
+        if not lines:
+            continue
 
-            run = paragraph.runs[0]
-            run.font.name = "Calibri"
-            run.font.size = Pt(font_size + 4 if _is_section_header(line) else font_size)
-            run.font.bold = _is_section_header(line)
-            run.font.color.rgb = RGBColor(255, 255, 255)
+        header = f"{section_type} {section_num}" if section_num else section_type
+        chunks = [lines[i: i + lines_per_slide] for i in range(0, len(lines), lines_per_slide)]
+
+        for chunk_idx, chunk in enumerate(chunks):
+            slide = presentation.slides.add_slide(blank_layout)
+            slide.background.fill.solid()
+            slide.background.fill.fore_color.rgb = RGBColor(0, 0, 0)
+
+            box = slide.shapes.add_textbox(
+                MARGIN_H, MARGIN_V,
+                SLIDE_W - 2 * MARGIN_H, SLIDE_H - 2 * MARGIN_V,
+            )
+            tf = box.text_frame
+            tf.clear()
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+            # Show section header only on the first chunk of each section
+            display_lines = ([header] if chunk_idx == 0 and header else []) + chunk
+
+            for idx, line in enumerate(display_lines):
+                is_header = idx == 0 and chunk_idx == 0 and bool(header)
+                para = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
+                para.text = line
+                para.alignment = PP_ALIGN.CENTER
+
+                run = para.runs[0]
+                run.font.name = font_name
+                run.font.size = Pt(font_size + 4 if is_header else font_size)
+                run.font.bold = is_header
+                run.font.color.rgb = RGBColor(255, 255, 255)
 
     output = io.BytesIO()
     presentation.save(output)
     return output.getvalue()
 
 
-def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    pages = [page.extract_text() or "" for page in reader.pages]
-    text = "\n".join(pages).strip()
-
-    if _has_meaningful_text(text):
-        return text
-
-    ocr_text = _extract_text_with_ocr(pdf_bytes)
-    if _has_meaningful_text(ocr_text):
-        return ocr_text
-
-    if text:
-        return text
-
-    raise ValueError("Could not extract readable text from this PDF, even with OCR fallback.")
-
-
-def _extract_text_with_ocr(pdf_bytes: bytes) -> str:
-    try:
-        import fitz  # PyMuPDF
-        import pytesseract
-        from PIL import Image
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(
-            "OCR fallback requires PyMuPDF, Pillow, pytesseract, and Tesseract OCR installed."
-        ) from exc
-
-    texts: list[str] = []
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    for page in doc:
-        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
-        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        page_text = pytesseract.image_to_string(image)
-        if page_text:
-            texts.append(page_text)
-
-    return "\n".join(texts).strip()
-
-
-def _has_meaningful_text(text: str) -> bool:
-    if not text or len(text.strip()) < 40:
-        return False
-
-    alpha_chars = sum(1 for ch in text if ch.isalpha())
-    return alpha_chars >= 20
-
-
-def _clean_lines(lines: Iterable[str]) -> list[str]:
-    cleaned: list[str] = []
-
-    for raw in lines:
-        line = " ".join(raw.replace("\u00a0", " ").split()).strip()
-        if not line:
-            if cleaned and cleaned[-1] != "":
-                cleaned.append("")
-            continue
-
-        if _DROP_LINE.search(line):
-            continue
-
-        if _is_probable_chord_line(line):
-            continue
-
-        # Remove music symbols and special characters
-        line = _MUSIC_SYMBOLS.sub("", line)
-        line = _remove_special_chars(line)
-        
-        # Skip if line becomes empty or too short after cleaning
-        line = line.strip()
-        if not line or len(line) < 2:
-            continue
-            
-        # Skip lines that are mostly punctuation or numbers
-        if _is_mostly_non_alpha(line):
-            continue
-
-        cleaned.append(line)
-
-    while cleaned and cleaned[-1] == "":
-        cleaned.pop()
-
-    return cleaned
-
-
-def _build_slide_chunks(lines: list[str], *, lines_per_slide: int) -> list[list[str]]:
-    groups: list[list[str]] = []
-    current: list[str] = []
-
-    for line in lines:
-        if line == "":
-            if current:
-                groups.append(current)
-                current = []
-            continue
-
-        if _is_section_header(line) and current:
-            groups.append(current)
-            current = [line]
-            continue
-
-        current.append(line)
-
-    if current:
-        groups.append(current)
-
-    chunks: list[list[str]] = []
-    for group in groups:
-        if len(group) <= lines_per_slide:
-            chunks.append(group)
-            continue
-
-        start = 0
-        while start < len(group):
-            end = start + lines_per_slide
-            piece = group[start:end]
-            chunks.append(piece)
-            start = end
-
-    return chunks
-
-
-def _is_probable_chord_line(line: str) -> bool:
-    normalized = line.replace("|", " ").replace("-", " ")
-    tokens = [t for t in normalized.split() if t]
-
-    if not tokens:
-        return False
-
-    chord_like = sum(1 for token in tokens if _CHORD_TOKEN.match(token))
-    return chord_like / len(tokens) >= 0.6 and len(tokens) <= 16
-
-
-def _is_section_header(line: str) -> bool:
-    return bool(_SECTION_HEADER.match(line.strip()))
-
-
-def _remove_special_chars(text: str) -> str:
-    """Remove common special characters that appear in sheet music but not in lyrics."""
-    # Remove box drawing characters
-    text = re.sub(r"[\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c\u2550\u2551\u2554\u2557\u255a\u255d\u2560\u2563\u2566\u2569\u256c]", "", text)
-    # Remove bullet points and arrows
-    text = re.sub(r"[\u2022\u25cf\u25cb\u25e6\u25a0\u25a1\u25aa\u25ab\u25ba\u25b6\u25c4\u25c0\u2191\u2193\u2192\u2190]", "", text)
-    # Remove excessive punctuation patterns (e.g., "----", "....", "||||")
-    text = re.sub(r"([.\-_|=]){3,}", "", text)
-    # Remove tab and other whitespace characters
-    text = re.sub(r"[\t\r\f\v]", " ", text)
-    return text
-
-
-def _is_mostly_non_alpha(text: str) -> bool:
-    """Check if a line is mostly non-alphabetic characters (numbers, punctuation, symbols)."""
-    if not text:
-        return True
-    alpha_count = sum(1 for ch in text if ch.isalpha())
-    total_count = len(text.replace(" ", ""))
-    return total_count > 0 and (alpha_count / total_count) < 0.4
-
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
 
 def _sanitize_basename(name: str) -> str:
-    safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_")
+    # Allow ASCII word chars, hyphens, and CJK characters
+    safe = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", name).strip("_")
     return safe or "lyrics"
+
+
+def _content_disposition(filename: str) -> str:
+    """Return a Content-Disposition header value that safely handles non-ASCII filenames."""
+    try:
+        filename.encode("latin-1")
+        return f'attachment; filename="{filename}"'
+    except UnicodeEncodeError:
+        encoded = quote(filename, safe="")
+        return f"attachment; filename*=UTF-8''{encoded}"

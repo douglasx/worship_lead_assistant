@@ -28,3 +28,6 @@ samples/
 # Temporary files
 *.tmp
 *.bak
+
+# Secrets
+.env
