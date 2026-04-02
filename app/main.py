@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
@@ -14,6 +15,7 @@ import anthropic
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
@@ -80,6 +82,49 @@ For language: use "en" for English, "zh" for Chinese, "en-zh" for mixed.
 
 Transcript:
 """
+
+
+# ---------------------------------------------------------------------------
+# Song recommender – data + helpers
+# ---------------------------------------------------------------------------
+
+_SONGS_DB_PATH = Path(__file__).parents[1] / "songs_database.xlsx"
+
+
+@lru_cache(maxsize=1)
+def _load_songs() -> list[dict]:
+    """Load songs from the Excel database. Cached after first call."""
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise RuntimeError("pandas is required for song recommendations.") from exc
+
+    df = pd.read_excel(_SONGS_DB_PATH, sheet_name="Sheet1")
+    df = df.where(pd.notna(df), None)  # replace NaN with None
+
+    songs = []
+    for _, row in df.iterrows():
+        songs.append({
+            "title": str(row.get("Songs") or "").strip(),
+            "link": str(row.get("Link") or "").strip(),
+            "theme": str(row.get("Theme") or "").strip(),
+            "theme_translated": str(row.get("Theme_translated") or "").strip(),
+            "lyrics_snippet": str(row.get("lyrics") or "")[:300].strip(),
+        })
+    return [s for s in songs if s["title"]]
+
+
+def _build_song_catalog(songs: list[dict]) -> str:
+    lines = []
+    for i, s in enumerate(songs, 1):
+        theme_part = s["theme"] or s["theme_translated"]
+        lines.append(f"{i}. {s['title']} | {theme_part}")
+    return "\n".join(lines)
+
+
+class RecommendRequest(BaseModel):
+    message: str
+    count: int = 7
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +226,69 @@ async def convert_youtube(
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": _content_disposition(filename)},
     )
+
+
+@app.post("/api/recommend-songs")
+async def recommend_songs(req: RecommendRequest) -> dict:
+    """Return a ranked list of worship songs relevant to the given message or Bible verses."""
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Please provide a message or Bible verses.")
+
+    count = max(1, min(req.count, 15))
+
+    try:
+        songs = _load_songs()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not load song database: {exc}") from exc
+
+    catalog = _build_song_catalog(songs)
+    song_index = {s["title"]: s for s in songs}
+
+    prompt = f"""You are a worship leader assistant. Given a sermon message or Bible passage, \
+select the {count} most spiritually relevant worship songs from the catalog below.
+
+CATALOG (index. Title | Theme):
+{catalog}
+
+SERMON / BIBLE PASSAGE:
+{req.message}
+
+Instructions:
+- Choose songs whose theme and spirit align with the message or passage.
+- Rank them from most to least relevant.
+- For each song provide a brief reason (1-2 sentences) explaining why it fits.
+- Respond ONLY with valid JSON — no markdown fences, no extra text:
+{{
+  "recommendations": [
+    {{"title": "exact song title from catalog", "reason": "..."}}
+  ]
+}}"""
+
+    response = _claude.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    try:
+        result = _parse_claude_json(response.content[0].text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to parse Claude response: {exc}") from exc
+
+    # Enrich each recommendation with link and theme from the database
+    enriched = []
+    for rec in result.get("recommendations", []):
+        title = rec.get("title", "")
+        meta = song_index.get(title, {})
+        enriched.append({
+            "title": title,
+            "reason": rec.get("reason", ""),
+            "theme": meta.get("theme", ""),
+            "theme_translated": meta.get("theme_translated", ""),
+            "link": meta.get("link", ""),
+        })
+
+    return {"recommendations": enriched}
 
 
 # ---------------------------------------------------------------------------

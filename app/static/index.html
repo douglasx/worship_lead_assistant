@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Worship Lead Assistant</title>
+    <title>Worship Leader Assistant</title>
     <style>
       :root {
         --bg: #0f172a;
@@ -229,6 +229,101 @@
         gap: 12px;
       }
 
+      /* Song recommender */
+      .msg-textarea {
+        width: 100%;
+        min-height: 120px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 14px;
+        background: rgba(15, 23, 42, 0.5);
+        color: var(--text);
+        font-size: 0.95rem;
+        font-family: inherit;
+        resize: vertical;
+        line-height: 1.6;
+      }
+
+      .msg-textarea::placeholder { color: var(--muted); }
+
+      .count-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .count-row label { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+
+      .count-row input {
+        width: 70px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 12px;
+        background: rgba(15, 23, 42, 0.5);
+        color: var(--text);
+        font-size: 0.95rem;
+      }
+
+      .song-cards {
+        margin-top: 20px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .song-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+        background: rgba(15, 23, 42, 0.48);
+      }
+
+      .song-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .song-rank {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--primary);
+        background: rgba(56, 189, 248, 0.12);
+        border-radius: 6px;
+        padding: 2px 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .song-title {
+        font-weight: 700;
+        font-size: 1rem;
+        flex: 1;
+      }
+
+      .song-title a {
+        color: var(--text);
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+
+      .song-title a:hover { color: var(--primary); }
+
+      .song-theme {
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
+      .song-reason {
+        font-size: 0.88rem;
+        color: var(--text);
+        margin-top: 8px;
+        line-height: 1.55;
+        opacity: 0.85;
+      }
+
       .convert-btn {
         border: 0;
         border-radius: 12px;
@@ -266,6 +361,7 @@
       <div class="tabs">
         <button class="tab-btn active" data-tab="pdf" data-i18n="tabPdf">PDF Upload</button>
         <button class="tab-btn" data-tab="youtube" data-i18n="tabYoutube">YouTube URL</button>
+        <button class="tab-btn" data-tab="recommend" data-i18n="tabRecommend">Song Recommender</button>
       </div>
 
       <!-- PDF Tab -->
@@ -334,13 +430,35 @@
           <span id="ytStatus" class="status" data-i18n-init="ytStatusInit">Enter YouTube URLs above.</span>
         </div>
       </div>
+      <!-- Song Recommender Tab -->
+      <div class="tab-panel" id="tab-recommend">
+        <textarea
+          id="recMessage"
+          class="msg-textarea"
+          data-i18n-placeholder="recPlaceholder"
+          placeholder="Paste sermon notes, a Bible passage, or describe the service theme…"
+        ></textarea>
+        <p class="hint" data-i18n="recHint">Claude will search the song database and return the most relevant worship songs for your service.</p>
+
+        <div class="count-row">
+          <label for="recCount" data-i18n="recCountLabel">Number of songs:</label>
+          <input id="recCount" type="number" min="1" max="15" value="7" />
+        </div>
+
+        <div class="actions">
+          <button id="recBtn" class="convert-btn" type="button" data-i18n="recBtn">Find Songs</button>
+          <span id="recStatus" class="status" data-i18n-init="recStatusInit">Enter a message above.</span>
+        </div>
+
+        <div id="songCards" class="song-cards"></div>
+      </div>
     </main>
 
     <script>
       // ── i18n ───────────────────────────────────────────────────────────
       const STRINGS = {
         en: {
-          pageTitle:        'Worship Music Sheet → Lyrics Slides',
+          pageTitle:        'Worship Leader Assistant',
           subtitle:         'Upload PDFs or paste YouTube URLs. Claude extracts, structures, and formats the lyrics into a PowerPoint deck.',
           tabPdf:           'PDF Upload',
           tabYoutube:       'YouTube URL',
@@ -366,9 +484,21 @@
           fetchingTranscript: 'Fetching transcript and analyzing with Claude…',
           fetchingDescription: 'Reading description and analyzing with Claude…',
           done:             'Done! Download started.',
+          // recommender
+          tabRecommend:     'Song Recommender',
+          recPlaceholder:   'Paste sermon notes, a Bible passage, or describe the service theme…',
+          recHint:          'Claude will search the song database and return the most relevant worship songs for your service.',
+          recCountLabel:    'Number of songs:',
+          recBtn:           'Find Songs',
+          recStatusInit:    'Enter a message above.',
+          recSearching:     'Searching for relevant songs…',
+          recNoMessage:     'Please enter a message or Bible passage.',
+          recNoResults:     'No recommendations returned. Try a different message.',
+          recError:         (msg) => `Error: ${msg}`,
+          recOf:            (n) => `Top ${n} song recommendations`,
         },
         zh: {
-          pageTitle:        '敬拜歌詞簡報製作',
+          pageTitle:        '敬拜領袖助手',
           subtitle:         '上傳PDF樂譜或貼上YouTube連結，Claude 將歌詞整理成 PowerPoint 簡報。',
           tabPdf:           'PDF 上傳',
           tabYoutube:       'YouTube 連結',
@@ -394,6 +524,18 @@
           fetchingTranscript: '擷取字幕並以 Claude 分析中⋯',
           fetchingDescription: '讀取說明並以 Claude 分析中⋯',
           done:             '完成！下載已開始。',
+          // recommender
+          tabRecommend:     '詩歌推薦',
+          recPlaceholder:   '貼上講道筆記、聖經段落或描述聚會主題⋯',
+          recHint:          'Claude 將搜尋詩歌資料庫，為您的聚會推薦最相關的敬拜詩歌。',
+          recCountLabel:    '推薦詩歌數量：',
+          recBtn:           '尋找詩歌',
+          recStatusInit:    '請在上方輸入訊息。',
+          recSearching:     '正在搜尋相關詩歌⋯',
+          recNoMessage:     '請輸入訊息或聖經段落。',
+          recNoResults:     '未返回任何推薦。請嘗試不同的訊息。',
+          recError:         (msg) => `錯誤：${msg}`,
+          recOf:            (n) => `前 ${n} 首詩歌推薦`,
         },
       };
 
@@ -590,6 +732,75 @@
         const ascii = header.match(/filename="?([^";]+)"?/i);
         return ascii?.[1] || null;
       }
+
+      // ── Song Recommender tab ───────────────────────────────────────────
+      const recMessage  = document.getElementById('recMessage');
+      const recCount    = document.getElementById('recCount');
+      const recBtn      = document.getElementById('recBtn');
+      const recStatus   = document.getElementById('recStatus');
+      const songCards   = document.getElementById('songCards');
+
+      recBtn.addEventListener('click', async () => {
+        const message = recMessage.value.trim();
+        if (!message) { recStatus.textContent = t('recNoMessage'); return; }
+
+        recBtn.disabled = true;
+        recStatus.textContent = t('recSearching');
+        songCards.innerHTML = '';
+
+        try {
+          const resp = await fetch('/api/recommend-songs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, count: parseInt(recCount.value, 10) || 7 }),
+          });
+
+          if (!resp.ok) {
+            const payload = await resp.json().catch(() => ({}));
+            throw new Error(payload.detail || 'Request failed.');
+          }
+
+          const data = await resp.json();
+          const recs = data.recommendations || [];
+
+          if (!recs.length) {
+            recStatus.textContent = t('recNoResults');
+          } else {
+            recStatus.textContent = t('recOf', recs.length);
+            recs.forEach((song, idx) => {
+              const card = document.createElement('div');
+              card.className = 'song-card';
+
+              const titleHtml = song.link
+                ? `<a href="${song.link}" target="_blank" rel="noopener">${song.title}</a>`
+                : song.title;
+
+              const themeText = [song.theme, song.theme_translated].filter(Boolean).join(' · ');
+
+              card.innerHTML = `
+                <div class="song-card-header">
+                  <span class="song-rank">#${idx + 1}</span>
+                  <div class="song-title">${titleHtml}</div>
+                </div>
+                ${themeText ? `<div class="song-theme">${themeText}</div>` : ''}
+                ${song.reason ? `<div class="song-reason">${song.reason}</div>` : ''}
+              `;
+              songCards.appendChild(card);
+            });
+          }
+        } catch (err) {
+          recStatus.textContent = t('recError', err.message);
+        } finally {
+          recBtn.disabled = false;
+        }
+      });
+
+      // Patch applyLang to also reset recommender status
+      const _origApplyLang = applyLang;
+      applyLang = function() {
+        _origApplyLang();
+        if (!recStatus.dataset.busy) recStatus.textContent = t('recStatusInit');
+      };
     </script>
   </body>
 </html>
