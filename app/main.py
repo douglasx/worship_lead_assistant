@@ -228,17 +228,23 @@ def _get_youtube_transcript(url: str) -> str:
         raise ValueError(f"Could not find a valid video ID in: {url}")
     video_id = match.group(1)
 
-    # Prefer manual captions; fall back to auto-generated in priority order
-    for languages in [["zh-TW", "zh-Hant", "zh-Hans", "zh"], ["en"], None]:
+    api = YouTubeTranscriptApi()
+
+    # Prefer Chinese captions, then English, then any available language
+    for languages in [["zh-TW", "zh-Hant", "zh-Hans", "zh"], ["en"]]:
         try:
-            entries = (
-                YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-                if languages
-                else YouTubeTranscriptApi.get_transcript(video_id)
-            )
-            return " ".join(e["text"] for e in entries)
+            transcript = api.fetch(video_id, languages=languages)
+            return " ".join(e.get("text", "") for e in transcript)
         except Exception:
             continue
+
+    # Fall back to whatever language is available
+    try:
+        transcript_list = api.list(video_id)
+        transcript = next(iter(transcript_list)).fetch()
+        return " ".join(e.get("text", "") for e in transcript)
+    except Exception:
+        pass
 
     raise ValueError(f"No transcript is available for this YouTube video: {url}")
 
