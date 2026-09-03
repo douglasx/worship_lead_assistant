@@ -9,10 +9,13 @@ This workspace now includes a working web app with a modern UI where a user can:
 - filter out likely chord-only lines and common metadata lines
 - generate simple PowerPoint lyrics slides
 - use OCR fallback for scanned/image-based PDFs when normal text extraction is insufficient
-- output slides with black background and white lyric text
+- output slides with style-guide defaults:
+	- dark charcoal background (`#1A1A1A`) and soft white lyric text (`#F5F5F5`)
+	- title + slide counter (`N/total`) in vocal-part colors (male/female/everyone)
+	- optional red footer instruction note on the first slide of each song
 - download:
 	- one `.pptx` file when one PDF is uploaded, or
-	- one `.zip` containing multiple `.pptx` files when multiple PDFs are uploaded
+	- one `.pptx` with all songs combined when multiple PDFs are uploaded
 
 ---
 
@@ -75,7 +78,40 @@ Then open:
 
 ---
 
-## 6) Original Vision (Future Scope)
+## 6) Regression Test Scripts
+
+Two one-command regression scripts are included under `scripts/`:
+
+- `scripts/regression_pdf.py`
+- `scripts/regression_youtube.py`
+
+Use the configured Python environment command prefix:
+
+```bash
+/Users/zeliangxu/opt/anaconda3/envs/py39/bin/python scripts/regression_pdf.py
+/Users/zeliangxu/opt/anaconda3/envs/py39/bin/python scripts/regression_youtube.py
+```
+
+Optional examples:
+
+```bash
+# Custom PDF input/output
+/Users/zeliangxu/opt/anaconda3/envs/py39/bin/python scripts/regression_pdf.py \
+	--input "samples/有一位神（D）.pdf" \
+	--output "samples/regression_pdf_custom.pptx"
+
+# Test only YouTube transcript mode for a specific URL
+/Users/zeliangxu/opt/anaconda3/envs/py39/bin/python scripts/regression_youtube.py \
+	--url "https://youtu.be/n0FBb6hnwTo?si=vlEZ8asfdAp1S9oW" \
+	--source transcript
+```
+
+Each script prints `PASS/FAIL` and key output metadata (status code, output size,
+basic first-slide style checks).
+
+---
+
+## 7) Original Vision (Future Scope)
 
 The broader assistant can still be extended to:
 
