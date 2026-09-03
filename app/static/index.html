@@ -204,6 +204,14 @@
         color: var(--text);
       }
 
+      .control select {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(15, 23, 42, 0.5);
+        color: var(--text);
+      }
+
       /* File list */
       #fileList {
         margin: 16px 0 0;
@@ -382,6 +390,18 @@
             <label for="fontSize" data-i18n="fontSize">Font size (pt)</label>
             <input id="fontSize" type="number" min="20" max="72" value="56" />
           </div>
+          <div class="control">
+            <label for="pdfVocalPart" data-i18n="vocalPart">Title color / Vocal part</label>
+            <select id="pdfVocalPart">
+              <option value="male" data-i18n="vocalMale">Male (Blue)</option>
+              <option value="female" data-i18n="vocalFemale">Female (Red)</option>
+              <option value="everyone" data-i18n="vocalEveryone" selected>Everyone (Green)</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="pdfFooterNote" data-i18n="footerNote">Footer note (optional)</label>
+            <input id="pdfFooterNote" type="text" data-i18n-placeholder="footerPlaceholder" placeholder="e.g. Please feel free to sit if needed" />
+          </div>
         </div>
 
         <ul id="fileList"></ul>
@@ -422,6 +442,18 @@
           <div class="control">
             <label for="ytFontSize" data-i18n="fontSize">Font size (pt)</label>
             <input id="ytFontSize" type="number" min="20" max="72" value="56" />
+          </div>
+          <div class="control">
+            <label for="ytVocalPart" data-i18n="vocalPart">Title color / Vocal part</label>
+            <select id="ytVocalPart">
+              <option value="male" data-i18n="vocalMale">Male (Blue)</option>
+              <option value="female" data-i18n="vocalFemale">Female (Red)</option>
+              <option value="everyone" data-i18n="vocalEveryone" selected>Everyone (Green)</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="ytFooterNote" data-i18n="footerNote">Footer note (optional)</label>
+            <input id="ytFooterNote" type="text" data-i18n-placeholder="footerPlaceholder" placeholder="e.g. Please feel free to sit if needed" />
           </div>
         </div>
 
@@ -467,6 +499,12 @@
           pickFiles:        'Choose PDF files',
           linesPerSlide:    'Lines per slide',
           fontSize:         'Font size (pt)',
+          vocalPart:        'Title color / Vocal part',
+          vocalMale:        'Male (Blue)',
+          vocalFemale:      'Female (Red)',
+          vocalEveryone:    'Everyone (Green)',
+          footerNote:       'Footer note (optional)',
+          footerPlaceholder:'e.g. Please feel free to sit if needed',
           convertBtn:       'Convert to PowerPoint',
           pdfStatusInit:    'No files selected.',
           ytStatusInit:     'Enter YouTube URLs above.',
@@ -507,6 +545,12 @@
           pickFiles:        '選擇 PDF 檔案',
           linesPerSlide:    '每頁行數',
           fontSize:         '字體大小（pt）',
+          vocalPart:        '標題顏色／演唱聲部',
+          vocalMale:        '男聲（藍）',
+          vocalFemale:      '女聲（紅）',
+          vocalEveryone:    '全體（綠）',
+          footerNote:       '頁腳提示（選填）',
+          footerPlaceholder:'例如：無法久站者請自行坐下',
           convertBtn:       '轉換為 PowerPoint',
           pdfStatusInit:    '尚未選擇檔案。',
           ytStatusInit:     '請在上方輸入 YouTube 連結。',
@@ -598,6 +642,8 @@
       const pdfStatus     = document.getElementById('pdfStatus');
       const linesPerSlide = document.getElementById('linesPerSlide');
       const fontSize      = document.getElementById('fontSize');
+      const pdfVocalPart  = document.getElementById('pdfVocalPart');
+      const pdfFooterNote = document.getElementById('pdfFooterNote');
 
       let selectedFiles = [];
 
@@ -649,6 +695,8 @@
         selectedFiles.forEach((f) => formData.append('files', f));
         formData.append('lines_per_slide', linesPerSlide.value || '4');
         formData.append('font_size', fontSize.value || '56');
+        formData.append('vocal_part', pdfVocalPart.value || 'everyone');
+        formData.append('footer_note', pdfFooterNote.value || '');
 
         try {
           await submitAndDownload('/api/convert', formData, pdfStatus);
@@ -663,6 +711,8 @@
       const ytStatus        = document.getElementById('ytStatus');
       const ytLinesPerSlide = document.getElementById('ytLinesPerSlide');
       const ytFontSize      = document.getElementById('ytFontSize');
+      const ytVocalPart     = document.getElementById('ytVocalPart');
+      const ytFooterNote    = document.getElementById('ytFooterNote');
       const ytHint          = document.getElementById('ytHint');
 
       document.querySelectorAll('input[name="ytSource"]').forEach((radio) => {
@@ -689,6 +739,8 @@
         formData.append('source', source);
         formData.append('lines_per_slide', ytLinesPerSlide.value || '4');
         formData.append('font_size', ytFontSize.value || '56');
+        formData.append('vocal_part', ytVocalPart.value || 'everyone');
+        formData.append('footer_note', ytFooterNote.value || '');
 
         try {
           await submitAndDownload('/api/convert-youtube', formData, ytStatus);
