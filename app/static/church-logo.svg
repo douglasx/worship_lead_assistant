@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 160" role="img" aria-labelledby="title desc">
+  <title id="title">New Hope Christian Church Woodlands logo</title>
+  <desc id="desc">Green tree icon representing New Hope Christian Church Woodlands</desc>
+  <g fill="#1f7a3c">
+    <circle cx="78" cy="54" r="28" />
+    <circle cx="112" cy="52" r="24" />
+    <circle cx="46" cy="58" r="24" />
+    <circle cx="82" cy="84" r="26" />
+    <circle cx="118" cy="82" r="24" />
+    <circle cx="36" cy="88" r="22" />
+    <rect x="20" y="58" width="130" height="48" rx="22" ry="22" />
+    <path d="M72 103 C84 114, 88 132, 84 150 L108 150 C110 126, 100 111, 90 102 Z" />
+  </g>
+</svg>

@@ -1,18 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Worship Leader Assistant</title>
     <style>
       :root {
-        --bg: #0f172a;
-        --panel: rgba(15, 23, 42, 0.75);
-        --line: rgba(148, 163, 184, 0.35);
-        --text: #e2e8f0;
-        --muted: #94a3b8;
-        --primary: #38bdf8;
-        --primary-2: #6366f1;
+        --bg: #edf4ea;
+        --panel: rgba(255, 255, 255, 0.92);
+        --line: rgba(76, 108, 85, 0.28);
+        --text: #1b2a22;
+        --muted: #526157;
+        --primary: #1f7a3c;
+        --primary-2: #2ea44f;
       }
 
       * { box-sizing: border-box; }
@@ -20,25 +20,25 @@
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        font-family: "Noto Sans TC", "Noto Sans SC", "Source Sans 3", sans-serif;
         color: var(--text);
         background:
-          radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.2), transparent 40%),
-          radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.22), transparent 40%),
+          radial-gradient(circle at 8% 10%, rgba(82, 174, 98, 0.2), transparent 38%),
+          radial-gradient(circle at 92% 88%, rgba(38, 110, 62, 0.14), transparent 42%),
+          linear-gradient(160deg, rgba(255, 255, 255, 0.76), rgba(230, 241, 229, 0.88)),
           var(--bg);
-        display: grid;
-        place-items: center;
-        padding: 24px;
+        padding: 22px;
       }
 
       .card {
-        width: min(900px, 100%);
+        width: min(1400px, 100%);
+        margin: 0 auto;
         background: var(--panel);
         backdrop-filter: blur(8px);
         border: 1px solid var(--line);
         border-radius: 18px;
         padding: 28px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 18px 46px rgba(33, 70, 45, 0.14);
       }
 
       .card-header {
@@ -49,6 +49,30 @@
       }
 
       .card-header-text { flex: 1; }
+
+      .church-brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 10px;
+      }
+
+      .church-logo {
+        width: 86px;
+        height: auto;
+        flex-shrink: 0;
+      }
+
+      .church-name {
+        font-size: clamp(1.1rem, 2vw, 1.5rem);
+        font-weight: 750;
+        line-height: 1.2;
+      }
+
+      .church-subname {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
 
       h1 { margin: 0 0 8px; font-size: clamp(1.4rem, 2vw, 2rem); }
       p.subtitle { margin: 0; color: var(--muted); }
@@ -76,7 +100,7 @@
       .lang-btn.active {
         color: var(--primary);
         border-color: var(--primary);
-        background: rgba(56, 189, 248, 0.08);
+        background: rgba(31, 122, 60, 0.1);
       }
 
       /* Tabs */
@@ -114,12 +138,12 @@
         padding: 20px;
         text-align: center;
         transition: 0.2s ease;
-        background: rgba(15, 23, 42, 0.45);
+        background: rgba(245, 252, 247, 0.8);
       }
 
       .uploader.dragging {
         border-color: var(--primary);
-        background: rgba(56, 189, 248, 0.08);
+        background: rgba(46, 164, 79, 0.14);
       }
 
       .uploader input { display: none; }
@@ -141,7 +165,7 @@
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 14px;
-        background: rgba(15, 23, 42, 0.5);
+        background: rgba(252, 255, 252, 0.96);
         color: var(--text);
         font-size: 0.95rem;
         font-family: inherit;
@@ -180,7 +204,7 @@
 
       .source-toggle label:has(input:checked) {
         border-color: var(--primary);
-        background: rgba(56, 189, 248, 0.08);
+        background: rgba(46, 164, 79, 0.1);
         color: var(--primary);
       }
 
@@ -200,7 +224,7 @@
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 12px;
-        background: rgba(15, 23, 42, 0.5);
+        background: rgba(252, 255, 252, 0.96);
         color: var(--text);
       }
 
@@ -208,7 +232,7 @@
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 12px;
-        background: rgba(15, 23, 42, 0.5);
+        background: rgba(252, 255, 252, 0.96);
         color: var(--text);
       }
 
@@ -225,7 +249,7 @@
         padding: 10px 12px;
         border-radius: 10px;
         border: 1px solid var(--line);
-        background: rgba(15, 23, 42, 0.48);
+        background: rgba(246, 251, 246, 0.95);
         font-size: 0.95rem;
       }
 
@@ -244,7 +268,7 @@
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 14px;
-        background: rgba(15, 23, 42, 0.5);
+        background: rgba(252, 255, 252, 0.96);
         color: var(--text);
         font-size: 0.95rem;
         font-family: inherit;
@@ -268,7 +292,7 @@
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 8px 12px;
-        background: rgba(15, 23, 42, 0.5);
+        background: rgba(252, 255, 252, 0.96);
         color: var(--text);
         font-size: 0.95rem;
       }
@@ -283,7 +307,7 @@
         border: 1px solid var(--line);
         border-radius: 12px;
         padding: 14px 16px;
-        background: rgba(15, 23, 42, 0.48);
+        background: rgba(247, 252, 247, 0.96);
       }
 
       .song-card-header {
@@ -297,7 +321,7 @@
         font-size: 0.78rem;
         font-weight: 700;
         color: var(--primary);
-        background: rgba(56, 189, 248, 0.12);
+        background: rgba(46, 164, 79, 0.14);
         border-radius: 6px;
         padding: 2px 8px;
         white-space: nowrap;
@@ -339,7 +363,7 @@
         font-weight: 700;
         cursor: pointer;
         color: #fff;
-        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        background: linear-gradient(135deg, #1f7a3c, #2ea44f);
       }
 
       .convert-btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -351,18 +375,97 @@
         font-size: 0.82rem;
         color: var(--muted);
       }
+
+      @media (max-width: 900px) {
+        body { padding: 12px; }
+
+        .card {
+          padding: 18px;
+          border-radius: 14px;
+        }
+
+        .card-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .lang-toggle {
+          margin-top: 0;
+          align-self: flex-start;
+        }
+
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .convert-btn {
+          width: 100%;
+        }
+
+        .status {
+          display: block;
+          text-align: left;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .church-brand {
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+
+        .church-logo {
+          width: 64px;
+        }
+
+        .church-name {
+          font-size: 1rem;
+        }
+
+        .church-subname {
+          font-size: 0.82rem;
+        }
+
+        h1 {
+          margin-bottom: 6px;
+          font-size: 1.2rem;
+        }
+
+        .tabs {
+          overflow-x: auto;
+          white-space: nowrap;
+        }
+
+        .tab-btn {
+          padding-left: 12px;
+          padding-right: 12px;
+        }
+      }
     </style>
   </head>
   <body>
     <main class="card">
       <div class="card-header">
         <div class="card-header-text">
+          <div class="church-brand">
+            <img class="church-logo" src="./church-logo.svg" alt="New Hope Christian Church Woodlands" />
+            <div>
+              <div class="church-name">New Hope</div>
+              <div class="church-subname">Christian Church Woodlands</div>
+            </div>
+          </div>
           <h1 data-i18n="pageTitle">Worship Music Sheet → Lyrics Slides</h1>
           <p class="subtitle" data-i18n="subtitle">Upload PDFs or paste YouTube URLs. Claude extracts, structures, and formats the lyrics into a PowerPoint deck.</p>
         </div>
         <div class="lang-toggle">
-          <button class="lang-btn active" data-lang="en">EN</button>
-          <button class="lang-btn" data-lang="zh">繁中</button>
+          <button class="lang-btn" data-lang="en">EN</button>
+          <button class="lang-btn active" data-lang="zh">繁中</button>
+          <button class="lang-btn" data-lang="zh-Hans">简中</button>
         </div>
       </div>
 
@@ -581,17 +684,66 @@
           recError:         (msg) => `錯誤：${msg}`,
           recOf:            (n) => `前 ${n} 首詩歌推薦`,
         },
+        'zh-Hans': {
+          pageTitle:        '敬拜领袖助手',
+          subtitle:         '上传PDF乐谱或贴上YouTube链接，Claude 将歌词整理成 PowerPoint 简报。',
+          tabPdf:           'PDF 上传',
+          tabYoutube:       'YouTube 链接',
+          dropZoneText:     '拖曳 PDF 文件到这里',
+          dropZoneOr:       '或',
+          pickFiles:        '选择 PDF 文件',
+          linesPerSlide:    '每页行数',
+          fontSize:         '字体大小（pt）',
+          vocalPart:        '标题颜色／演唱声部',
+          vocalMale:        '男声（蓝）',
+          vocalFemale:      '女声（红）',
+          vocalEveryone:    '全体（绿）',
+          footerNote:       '页脚提示（选填）',
+          footerPlaceholder:'例如：无法久站者请自行坐下',
+          convertBtn:       '转换为 PowerPoint',
+          pdfStatusInit:    '尚未选择文件。',
+          ytStatusInit:     '请在上方输入 YouTube 链接。',
+          ytPlaceholder:    'https://www.youtube.com/watch?v=\nhttps://youtu.be/...',
+          ytMultiHint:      '每行一个链接，所有歌曲将合并为一份 PowerPoint。',
+          transcriptLabel:  '字幕（自动生成）',
+          descriptionLabel: '视频说明（歌词贴于说明栏）',
+          hintTranscript:   '使用自动生成或手动添加的字幕，适合有准确字幕的视频。',
+          hintDescription:  '读取贴在视频说明栏的歌词，适合完整歌词贴于说明栏的视频。',
+          // dynamic
+          noFiles:          '请至少选择一个 PDF 文件。',
+          analyzingPdf:     'Claude 分析中⋯请稍候。',
+          filesReady:       (n) => `已选择 ${n} 个 PDF 文件。`,
+          noUrl:            '请输入至少一个 YouTube 链接。',
+          fetchingTranscript: '提取字幕并以 Claude 分析中⋯',
+          fetchingDescription: '读取说明并以 Claude 分析中⋯',
+          done:             '完成！下载已开始。',
+          // recommender
+          tabRecommend:     '诗歌推荐',
+          recPlaceholder:   '贴上讲道笔记、圣经段落或描述聚会主题⋯',
+          recHint:          'Claude 将搜索诗歌数据库，为您的聚会推荐最相关的敬拜诗歌。',
+          recCountLabel:    '推荐诗歌数量：',
+          recBtn:           '寻找诗歌',
+          recStatusInit:    '请在上方输入讯息。',
+          recSearching:     '正在搜索相关诗歌⋯',
+          recNoMessage:     '请输入讯息或圣经段落。',
+          recNoResults:     '未返回任何推荐。请尝试不同的讯息。',
+          recError:         (msg) => `错误：${msg}`,
+          recOf:            (n) => `前 ${n} 首诗歌推荐`,
+        },
       };
 
-      let currentLang = 'en';
+      let currentLang = 'zh';
 
       function t(key, ...args) {
-        const val = STRINGS[currentLang][key];
+        const langTable = STRINGS[currentLang] || STRINGS.zh;
+        const val = langTable[key];
         return typeof val === 'function' ? val(...args) : (val ?? key);
       }
 
       function applyLang() {
-        document.documentElement.lang = currentLang === 'zh' ? 'zh-Hant' : 'en';
+        if (currentLang === 'zh') document.documentElement.lang = 'zh-Hant';
+        else if (currentLang === 'zh-Hans') document.documentElement.lang = 'zh-Hans';
+        else document.documentElement.lang = 'en';
 
         document.querySelectorAll('[data-i18n]').forEach((el) => {
           el.textContent = t(el.dataset.i18n);
@@ -853,6 +1005,8 @@
         _origApplyLang();
         if (!recStatus.dataset.busy) recStatus.textContent = t('recStatusInit');
       };
+
+      applyLang();
     </script>
   </body>
 </html>
