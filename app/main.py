@@ -553,7 +553,7 @@ def _transcript_entries_to_text(entries) -> str:
 
 
 def _yt_dlp_option_candidates() -> list[dict]:
-    """Build yt-dlp option candidates with retries and optional cookie strategies."""
+    """Build yt-dlp option candidates with retries and opt-in cookie strategies."""
     base = {
         "quiet": True,
         "no_warnings": True,
@@ -584,13 +584,8 @@ def _yt_dlp_option_candidates() -> list[dict]:
         candidates.append(opts)
 
     raw_browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER", "").strip()
-    if raw_browser:
+    if raw_browser and raw_browser.lower() not in {"0", "false", "off", "none"}:
         for browser in [b.strip() for b in raw_browser.split(",") if b.strip()]:
-            opts = dict(base)
-            opts["cookiesfrombrowser"] = (browser,)
-            candidates.append(opts)
-    else:
-        for browser in ["chrome", "brave", "edge", "firefox", "safari", "chromium"]:
             opts = dict(base)
             opts["cookiesfrombrowser"] = (browser,)
             candidates.append(opts)
