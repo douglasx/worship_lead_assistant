@@ -763,7 +763,7 @@ def _add_title_row(
     tf.vertical_anchor = MSO_ANCHOR.TOP
 
     para = tf.paragraphs[0]
-    para.alignment = PP_ALIGN.LEFT
+    para.alignment = PP_ALIGN.CENTER
     para.space_after = Pt(0)
 
     title_run = para.add_run()
