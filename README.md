@@ -74,6 +74,7 @@ Then open:
 
 - PDF parsing quality depends on the PDF text layer.
 - Scanned-image PDFs use OCR fallback (requires Tesseract installed), but quality may vary by scan quality.
+- Some copyrighted score PDFs may be blocked by model-provider content policy during direct vision extraction. The app now automatically attempts local text/OCR fallback in this case.
 - Chord removal uses heuristics; edge cases may remain and can be refined.
 
 ---

@@ -4,6 +4,7 @@ python-multipart==0.0.20
 python-pptx==1.0.2
 PyMuPDF==1.26.4
 Pillow==11.3.0
+pytesseract>=0.3.10
 anthropic>=0.40.0
 python-dotenv>=1.0.0
 youtube-transcript-api>=0.6.2

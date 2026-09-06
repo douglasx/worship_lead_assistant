@@ -158,6 +158,17 @@
         background: linear-gradient(135deg, var(--primary), var(--primary-2));
       }
 
+      .copyright-note {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border: 1px solid rgba(168, 92, 26, 0.28);
+        border-radius: 10px;
+        background: rgba(255, 246, 233, 0.95);
+        color: #6a4216;
+        font-size: 0.86rem;
+        line-height: 1.45;
+      }
+
       /* YouTube textarea */
       .yt-textarea {
         width: 100%;
@@ -482,6 +493,7 @@
           <p data-i18n="dropZoneText">Drag &amp; drop PDFs here</p>
           <p data-i18n="dropZoneOr" style="margin: 8px 0 12px">or</p>
           <button type="button" id="pickBtn" data-i18n="pickFiles">Choose PDF files</button>
+          <p class="copyright-note" data-i18n="pdfCopyrightNote">Some copyrighted score PDFs may be blocked by model policy during extraction. If that happens, the app will attempt local text/OCR fallback, but quality can vary.</p>
         </section>
 
         <div class="controls">
@@ -617,6 +629,8 @@
           descriptionLabel: 'Description (lyrics pasted in description)',
           hintTranscript:   'Uses auto-generated or manual captions. Best when the video has accurate subtitles.',
           hintDescription:  'Reads lyrics pasted in the video description. Best for songs that include full lyrics there.',
+          pdfCopyrightNote: 'Some copyrighted score PDFs may be blocked by model policy during extraction. If that happens, the app will attempt local text/OCR fallback, but quality can vary.',
+          pdfFallbackUsed:  'Done! Download started. Local text/OCR fallback was used for at least one PDF.',
           // dynamic
           noFiles:          'Please choose at least one PDF.',
           analyzingPdf:     'Analyzing with Claude… this may take a moment.',
@@ -663,6 +677,8 @@
           descriptionLabel: '影片說明（歌詞貼於說明欄）',
           hintTranscript:   '使用自動生成或手動添加的字幕，適合有準確字幕的影片。',
           hintDescription:  '讀取貼在影片說明欄的歌詞，適合完整歌詞貼於說明欄的影片。',
+          pdfCopyrightNote: '部分受版權保護的樂譜 PDF 可能因模型政策而無法直接擷取。若發生此情況，系統會嘗試本機文字/OCR 備援，但品質可能因檔案而異。',
+          pdfFallbackUsed:  '完成！已開始下載。至少有一個 PDF 使用了本機文字/OCR 備援。',
           // dynamic
           noFiles:          '請至少選擇一個 PDF 檔案。',
           analyzingPdf:     'Claude 分析中⋯請稍候。',
@@ -709,6 +725,8 @@
           descriptionLabel: '视频说明（歌词贴于说明栏）',
           hintTranscript:   '使用自动生成或手动添加的字幕，适合有准确字幕的视频。',
           hintDescription:  '读取贴在视频说明栏的歌词，适合完整歌词贴于说明栏的视频。',
+          pdfCopyrightNote: '部分受版权保护的乐谱 PDF 可能因模型政策而无法直接提取。若发生这种情况，系统会尝试本地文字/OCR 备用方案，但品质可能因文件而异。',
+          pdfFallbackUsed:  '完成！已开始下载。至少有一个 PDF 使用了本地文字/OCR 备用方案。',
           // dynamic
           noFiles:          '请至少选择一个 PDF 文件。',
           analyzingPdf:     'Claude 分析中⋯请稍候。',
@@ -851,7 +869,10 @@
         formData.append('footer_note', pdfFooterNote.value || '');
 
         try {
-          await submitAndDownload('/api/convert', formData, pdfStatus);
+          const result = await submitAndDownload('/api/convert', formData, pdfStatus, { checkPdfFallback: true });
+          if (result.pdfFallbackUsed) {
+            pdfStatus.textContent = t('pdfFallbackUsed');
+          }
         } finally {
           convertPdfBtn.disabled = false;
         }
@@ -903,7 +924,7 @@
       }
 
       // ── Shared helper ──────────────────────────────────────────────────
-      async function submitAndDownload(endpoint, formData, statusEl) {
+      async function submitAndDownload(endpoint, formData, statusEl, options = {}) {
         try {
           const response = await fetch(endpoint, { method: 'POST', body: formData });
           if (!response.ok) {
@@ -925,8 +946,13 @@
           URL.revokeObjectURL(url);
 
           statusEl.textContent = t('done');
+          return {
+            pdfFallbackUsed: options.checkPdfFallback === true &&
+              (response.headers.get('X-PDF-Fallback-Used') || '').toLowerCase() === 'true',
+          };
         } catch (err) {
           statusEl.textContent = err.message;
+          return { pdfFallbackUsed: false };
         }
       }
 

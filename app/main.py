@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -100,6 +101,10 @@ Transcript:
 """
 
 
+class ContentFilteredError(ValueError):
+    """Raised when model output is blocked by provider-side content filtering."""
+
+
 # ---------------------------------------------------------------------------
 # Song recommender – data + helpers
 # ---------------------------------------------------------------------------
@@ -170,6 +175,7 @@ async def convert(
 
     songs: list[dict] = []
     first_stem: str = "lyrics"
+    used_local_fallback = False
 
     for upload in files:
         if not upload.filename or not upload.filename.lower().endswith(".pdf"):
@@ -184,6 +190,15 @@ async def convert(
 
         try:
             song_data = _extract_lyrics_from_pdf(file_bytes)
+        except ContentFilteredError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Failed to process {upload.filename}: {exc}. "
+                    "This file likely contains copyrighted score content that the model cannot transcribe directly. "
+                    "Try a lyric-only PDF, or enable local OCR fallback dependencies and retry."
+                ),
+            ) from exc
         except Exception as exc:
             raise HTTPException(
                 status_code=422,
@@ -191,6 +206,8 @@ async def convert(
             ) from exc
 
         songs.append(song_data)
+        if song_data.get("_used_local_fallback"):
+            used_local_fallback = True
         if len(songs) == 1:
             first_stem = _sanitize_basename(Path(upload.filename).stem)
 
@@ -210,7 +227,10 @@ async def convert(
     return Response(
         content=ppt_bytes,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        headers={"Content-Disposition": _content_disposition(filename)},
+        headers={
+            "Content-Disposition": _content_disposition(filename),
+            "X-PDF-Fallback-Used": "true" if used_local_fallback else "false",
+        },
     )
 
 
@@ -344,7 +364,7 @@ Instructions:
 # ---------------------------------------------------------------------------
 
 def _extract_lyrics_from_pdf(pdf_bytes: bytes) -> dict:
-    """Render each PDF page as an image and send to Claude Vision for extraction."""
+    """Extract lyrics from PDF, preferring model vision with local fallback on failures."""
     try:
         import fitz  # PyMuPDF
     except ImportError as exc:
@@ -363,13 +383,258 @@ def _extract_lyrics_from_pdf(pdf_bytes: bytes) -> dict:
 
     content.append({"type": "text", "text": _PDF_EXTRACTION_PROMPT})
 
-    response = _claude.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": content}],
-    )
+    try:
+        response = _claude.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": content}],
+        )
+        result = _parse_claude_json(response.content[0].text)
+        result["_used_local_fallback"] = False
+        return result
+    except Exception as exc:
+        if _is_content_filter_error(exc):
+            # If provider-side policy blocks score transcription, fall back locally.
+            fallback = _extract_lyrics_from_pdf_locally(doc)
+            if fallback.get("sections"):
+                fallback["_used_local_fallback"] = True
+                return fallback
+            raise ContentFilteredError(str(exc)) from exc
 
-    return _parse_claude_json(response.content[0].text)
+        fallback = _extract_lyrics_from_pdf_locally(doc)
+        if fallback.get("sections"):
+            fallback["_used_local_fallback"] = True
+            return fallback
+        raise
+
+
+def _is_content_filter_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    markers = [
+        "content filtering policy",
+        "content filter",
+        "blocked by content",
+        "output blocked",
+        "invalid_request_error",
+    ]
+    return any(marker in text for marker in markers)
+
+
+def _extract_lyrics_from_pdf_locally(doc) -> dict:
+    """Best-effort local extraction from text layer and optional OCR without model calls."""
+    text_lines: list[str] = []
+
+    for page in doc:
+        page_text = page.get_text("text") or ""
+        text_lines.extend(page_text.splitlines())
+
+    cleaned = _clean_candidate_lyric_lines(text_lines)
+
+    if len(cleaned) < 6:
+        ocr_lines = _extract_pdf_lines_with_ocr(doc)
+        cleaned = _clean_candidate_lyric_lines(cleaned + ocr_lines)
+
+    if not cleaned:
+        return {"title": None, "language": "en", "sections": []}
+
+    title = _guess_title_from_lines(cleaned)
+    sections = _group_lines_into_sections(cleaned)
+    language = _detect_language_for_lines(cleaned)
+
+    return {
+        "title": title,
+        "language": language,
+        "sections": sections,
+    }
+
+
+def _extract_pdf_lines_with_ocr(doc) -> list[str]:
+    """Optional OCR fallback when PDF text layer is missing or sparse."""
+    try:
+        import fitz  # PyMuPDF
+        from PIL import Image
+        import pytesseract
+    except Exception:
+        return []
+
+    lines: list[str] = []
+    for page in doc:
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+        image = Image.open(io.BytesIO(pix.tobytes("png")))
+        try:
+            # Try multilingual OCR first; fall back to default if language packs are missing.
+            text = pytesseract.image_to_string(
+                image,
+                lang="chi_tra+chi_sim+eng",
+            )
+        except Exception:
+            try:
+                text = pytesseract.image_to_string(image)
+            except Exception:
+                continue
+        lines.extend((text or "").splitlines())
+    return lines
+
+
+def _clean_candidate_lyric_lines(lines: list[str]) -> list[str]:
+    seen: set[str] = set()
+    cleaned: list[str] = []
+
+    for raw in lines:
+        line = re.sub(r"\s+", " ", (raw or "").strip())
+        if not line:
+            continue
+        if _is_obvious_metadata_line(line):
+            continue
+        if _is_probable_music_notation_line(line):
+            continue
+
+        key = line.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(line)
+
+    return cleaned
+
+
+def _is_obvious_metadata_line(line: str) -> bool:
+    lowered = line.lower()
+    metadata_markers = [
+        "copyright",
+        "ccli",
+        "all rights",
+        "downloaded from",
+        "poppiano",
+        "www.",
+        "@",
+        "for members of",
+        "capo",
+        "tempo",
+        "verse:",
+        "psalm",
+        "詩篇",
+    ]
+    if any(marker in lowered for marker in metadata_markers):
+        return True
+
+    # Drop lines that are almost entirely punctuation/digits.
+    if re.fullmatch(r"[\W\d_]+", line):
+        return True
+
+    return False
+
+
+def _is_probable_music_notation_line(line: str) -> bool:
+    tokens = line.replace("|", " ").split()
+    if not tokens:
+        return True
+
+    chord_tokens = 0
+    notation_pattern = re.compile(r"^[A-G](?:#|b)?(?:m|maj|min|sus|dim|aug)?\d*(?:/[A-G](?:#|b)?)?$")
+    for token in tokens:
+        if notation_pattern.fullmatch(token):
+            chord_tokens += 1
+
+    if chord_tokens and chord_tokens >= max(2, int(len(tokens) * 0.6)):
+        return True
+
+    # Staff-degree number rows like "5 5 6 1 2" are not lyric lines.
+    digit_like = sum(1 for token in tokens if re.fullmatch(r"[0-9#b\-\.]+", token))
+    if digit_like >= max(3, int(len(tokens) * 0.7)):
+        return True
+
+    return False
+
+
+def _guess_title_from_lines(lines: list[str]) -> str | None:
+    for line in lines[:12]:
+        stripped = line.strip("-:,. ")
+        if not stripped:
+            continue
+        if len(stripped) > 60:
+            continue
+        if re.search(r"verse|chorus|bridge|refrain|副歌|主歌", stripped, flags=re.IGNORECASE):
+            continue
+        return stripped
+    return None
+
+
+def _group_lines_into_sections(lines: list[str]) -> list[dict]:
+    numbered_map: dict[int, list[str]] = defaultdict(list)
+    unnumbered: list[str] = []
+
+    for line in lines:
+        match = re.match(r"^(\d{1,2})[\.)]\s*(.+)$", line)
+        if match:
+            num = int(match.group(1))
+            text = match.group(2).strip()
+            if text:
+                numbered_map[num].append(text)
+            continue
+        unnumbered.append(line)
+
+    sections: list[dict] = []
+    if len(numbered_map) >= 2:
+        for num in sorted(numbered_map):
+            verse_lines = numbered_map[num]
+            if verse_lines:
+                sections.append({"type": "Verse", "number": num, "lines": verse_lines})
+
+        if unnumbered:
+            chorus_like = [ln for ln in unnumbered if re.search(r"refrain|chorus|副歌", ln, flags=re.IGNORECASE)]
+            other = [ln for ln in unnumbered if ln not in chorus_like]
+            if chorus_like:
+                sections.append({"type": "Chorus", "number": None, "lines": chorus_like})
+            if other:
+                sections.append({"type": "Tag", "number": None, "lines": other})
+        return sections
+
+    section_header_patterns = [
+        ("Verse", re.compile(r"^(verse|主歌)\s*(\d+)?$", flags=re.IGNORECASE)),
+        ("Chorus", re.compile(r"^(chorus|refrain|副歌)$", flags=re.IGNORECASE)),
+        ("Bridge", re.compile(r"^(bridge|橋段)$", flags=re.IGNORECASE)),
+        ("Pre-Chorus", re.compile(r"^(pre-?chorus)$", flags=re.IGNORECASE)),
+        ("Outro", re.compile(r"^(outro|ending|尾聲)$", flags=re.IGNORECASE)),
+        ("Intro", re.compile(r"^(intro|前奏)$", flags=re.IGNORECASE)),
+    ]
+
+    current = {"type": "Verse", "number": 1, "lines": []}
+    for line in lines:
+        switched = False
+        for name, pattern in section_header_patterns:
+            m = pattern.match(line.strip())
+            if not m:
+                continue
+
+            if current["lines"]:
+                sections.append(current)
+
+            number = None
+            if name == "Verse" and m.groups() and m.group(2):
+                number = int(m.group(2))
+            current = {"type": name, "number": number, "lines": []}
+            switched = True
+            break
+
+        if not switched:
+            current["lines"].append(line)
+
+    if current["lines"]:
+        sections.append(current)
+
+    return sections
+
+
+def _detect_language_for_lines(lines: list[str]) -> str:
+    text = " ".join(lines)
+    has_zh = _contains_cjk(text)
+    has_en = bool(re.search(r"[A-Za-z]", text))
+    if has_zh and has_en:
+        return "en-zh"
+    if has_zh:
+        return "zh"
+    return "en"
 
 
 def _get_youtube_transcript(url: str) -> str:
