@@ -8,10 +8,6 @@ Worship Leader Assistant helps worship teams quickly prepare service materials f
 
 The output format follows your church slide style guide so the deck is usable immediately with minimal cleanup.
 
-## Quick Demo GIF
-
-![Quick demo of PDF, YouTube, and recommender workflows](docs/screenshots/04-quick-demo.gif)
-
 ## Screenshot Tour
 
 ### 1) Home + PDF workflow
